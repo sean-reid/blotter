@@ -23,10 +23,11 @@ export async function fetchEvents(
   startTs: number,
   endTs: number,
   bounds?: { west: number; south: number; east: number; north: number },
+  search?: string,
 ): Promise<ScannerEvent[]> {
   let sql =
     `SELECT feed_id, archive_ts, event_ts, raw_location, normalized, ` +
-    `latitude, longitude, confidence ` +
+    `latitude, longitude, confidence, context, tags ` +
     `FROM blotter.scanner_events ` +
     `WHERE event_ts BETWEEN fromUnixTimestamp(${startTs}) AND fromUnixTimestamp(${endTs})`;
 
@@ -36,8 +37,32 @@ export async function fetchEvents(
       ` AND latitude BETWEEN ${bounds.south} AND ${bounds.north}`;
   }
 
+  if (search) {
+    const escaped = search.replace(/'/g, "\\'").replace(/%/g, "\\%").replace(/_/g, "\\_");
+    sql +=
+      ` AND (context ILIKE '%${escaped}%'` +
+      ` OR normalized ILIKE '%${escaped}%'` +
+      ` OR raw_location ILIKE '%${escaped}%'` +
+      ` OR tags ILIKE '%${escaped}%')`;
+  }
+
   sql += ` ORDER BY event_ts DESC LIMIT 5000`;
   return query<ScannerEvent>(sql);
+}
+
+export async function fetchTranscriptForEvent(
+  feedId: string,
+  archiveTs: string,
+): Promise<TranscriptResult | null> {
+  const escaped = feedId.replace(/'/g, "\\'");
+  const sql =
+    `SELECT feed_id, feed_name, archive_ts, duration_ms, audio_url, transcript, segments, tags ` +
+    `FROM blotter.scanner_transcripts ` +
+    `WHERE feed_id = '${escaped}' ` +
+    `AND archive_ts = '${archiveTs}' ` +
+    `LIMIT 1`;
+  const results = await query<TranscriptResult>(sql);
+  return results[0] ?? null;
 }
 
 export async function searchTranscripts(
@@ -45,12 +70,17 @@ export async function searchTranscripts(
   startTs: number,
   endTs: number,
 ): Promise<TranscriptResult[]> {
-  const escaped = term.replace(/'/g, "\\'");
-  const sql =
-    `SELECT feed_id, feed_name, archive_ts, duration_ms, audio_url, transcript ` +
+  let sql =
+    `SELECT feed_id, feed_name, archive_ts, duration_ms, audio_url, transcript, segments, tags ` +
     `FROM blotter.scanner_transcripts ` +
-    `WHERE hasToken(transcript, '${escaped}') ` +
-    `AND archive_ts BETWEEN fromUnixTimestamp(${startTs}) AND fromUnixTimestamp(${endTs}) ` +
-    `ORDER BY archive_ts DESC LIMIT 100`;
+    `WHERE length(transcript) > 0 ` +
+    `AND archive_ts BETWEEN fromUnixTimestamp(${startTs}) AND fromUnixTimestamp(${endTs})`;
+
+  if (term) {
+    const escaped = term.replace(/'/g, "\\'").replace(/%/g, "\\%").replace(/_/g, "\\_");
+    sql += ` AND (transcript ILIKE '%${escaped}%' OR tags ILIKE '%${escaped}%')`;
+  }
+
+  sql += ` ORDER BY archive_ts DESC LIMIT 50`;
   return query<TranscriptResult>(sql);
 }

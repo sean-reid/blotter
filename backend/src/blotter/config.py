@@ -2,15 +2,6 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class BroadcastifyConfig(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="BROADCASTIFY_")
-
-    api_key: str
-    username: str
-    base_url: str = "https://api.broadcastify.com/calls"
-    rate_limit_rps: float = 1.0
-
-
 class ClickHouseConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CLICKHOUSE_")
 
@@ -21,17 +12,39 @@ class ClickHouseConfig(BaseSettings):
     password: str = ""
 
 
-class NominatimConfig(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="NOMINATIM_")
+class RegionConfig(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="REGION_", env_file=".env", extra="ignore")
 
-    url: str = "http://localhost:8080"
-    viewbox: str = "-122.2,37.5,-121.2,36.9"
-    bounded: bool = True
-    country_codes: str = "us"
+    name: str = "Los Angeles"
+    state: str = "CA"
+    bbox_south: float = 33.7
+    bbox_west: float = -118.95
+    bbox_north: float = 34.35
+    bbox_east: float = -117.65
+
+    @property
+    def location_suffix(self) -> str:
+        return f"{self.name}, {self.state}" if self.state else self.name
+
+    @property
+    def places_bias(self) -> str:
+        return f"rectangle:{self.bbox_south},{self.bbox_west}|{self.bbox_north},{self.bbox_east}"
+
+
+class GoogleGeocodingConfig(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="GOOGLE_GEOCODING_", env_file=".env", extra="ignore")
+
+    api_key: str = ""
+
+
+class GoogleNLPConfig(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="GOOGLE_NLP_", env_file=".env", extra="ignore")
+
+    api_key: str = ""
 
 
 class TranscriptionConfig(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="TRANSCRIPTION_")
+    model_config = SettingsConfigDict(env_prefix="TRANSCRIPTION_", env_file=".env", extra="ignore")
 
     model_size: str = "large-v3"
     device: str = "cuda"
@@ -41,18 +54,61 @@ class TranscriptionConfig(BaseSettings):
     vad_filter: bool = True
     vad_min_silence_ms: int = 500
     vad_speech_pad_ms: int = 200
+    prompt_file: str = ""
+
+
+class GCSConfig(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="GCS_", env_file=".env", extra="ignore")
+
+    bucket: str = "blotter-audio"
+    project: str = ""
+    local_dir: str = "data/stream"
+
+
+class RedisConfig(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="REDIS_", env_file=".env", extra="ignore")
+
+    host: str = "localhost"
+    port: int = 6379
+    db: int = 0
+
+
+class StreamConfig(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="STREAM_", env_file=".env", extra="ignore")
+
+    segment_time: int = 300
+    overlap_seconds: int = 5
+    ad_skip_seconds: int = 35
+    reconnect_delay: int = 5
+    reconnect_max_delay: int = 300
+    reconnect_max_failures: int = 10
+    chunk_dir: str = "/tmp/blotter"
+
+    feeds: str = "20296:LAPD South Bureau,33623:LAPD West Bureau,26569:LAPD Valley Bureau,40488:LAPD Hotshot,25187:LASD Multi-Dispatch,24051:Long Beach PD"
+
+    def get_feeds(self) -> dict[str, str]:
+        result = {}
+        for entry in self.feeds.split(","):
+            entry = entry.strip()
+            if ":" in entry:
+                fid, name = entry.split(":", 1)
+                result[fid.strip()] = name.strip()
+        return result
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
-    feed_ids: list[str] = Field(default_factory=list)
     data_dir: str = "data"
 
-    broadcastify: BroadcastifyConfig = Field(default_factory=BroadcastifyConfig)
+    region: RegionConfig = Field(default_factory=RegionConfig)
     clickhouse: ClickHouseConfig = Field(default_factory=ClickHouseConfig)
-    nominatim: NominatimConfig = Field(default_factory=NominatimConfig)
+    google_geocoding: GoogleGeocodingConfig = Field(default_factory=GoogleGeocodingConfig)
+    google_nlp: GoogleNLPConfig = Field(default_factory=GoogleNLPConfig)
     transcription: TranscriptionConfig = Field(default_factory=TranscriptionConfig)
+    gcs: GCSConfig = Field(default_factory=GCSConfig)
+    redis: RedisConfig = Field(default_factory=RedisConfig)
+    stream: StreamConfig = Field(default_factory=StreamConfig)
 
 
 def get_settings() -> Settings:

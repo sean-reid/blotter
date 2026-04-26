@@ -8,14 +8,12 @@ dependencies = [
     "pydantic-settings>=2.7",
     "structlog>=24.4",
     "httpx>=0.28",
-    "tenacity>=9.0",
     "clickhouse-connect>=0.8",
-    "geopy>=2.4",
     "shapely>=2.0",
-    "usaddress>=0.5",
-    "spacy>=3.8",
     "faster-whisper>=1.1",
     "pydub>=0.25",
+    "google-cloud-storage>=2.18",
+    "redis>=5.0",
 ]
 
 [project.optional-dependencies]

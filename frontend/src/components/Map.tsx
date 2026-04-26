@@ -8,7 +8,7 @@ import MapGL, {
 } from "react-map-gl/maplibre";
 import type { ScannerEvent } from "../lib/types";
 
-const SCC_CENTER = { longitude: -121.9, latitude: 37.35 };
+const LA_CENTER = { longitude: -118.35, latitude: 34.05 };
 
 interface Props {
   events: ScannerEvent[];
@@ -73,7 +73,7 @@ export default function Map({ events, onBoundsChange, onEventClick }: Props) {
     <MapGL
       ref={mapRef}
       initialViewState={{
-        ...SCC_CENTER,
+        ...LA_CENTER,
         zoom: 11,
       }}
       style={{ width: "100%", height: "100%" }}
@@ -102,24 +102,24 @@ export default function Map({ events, onBoundsChange, onEventClick }: Props) {
             "circle-color": [
               "step",
               ["get", "point_count"],
-              "#6366f1",
+              "#b38030",
               10,
-              "#818cf8",
+              "#9a6e28",
               50,
-              "#a5b4fc",
+              "#7d5a20",
             ],
             "circle-radius": [
               "step",
               ["get", "point_count"],
-              18,
+              16,
               10,
-              26,
+              24,
               50,
-              34,
+              32,
             ],
             "circle-opacity": 0.85,
-            "circle-stroke-width": 2,
-            "circle-stroke-color": "rgba(99, 102, 241, 0.3)",
+            "circle-stroke-width": 1.5,
+            "circle-stroke-color": "rgba(179, 128, 48, 0.2)",
           }}
         />
 
@@ -133,7 +133,7 @@ export default function Map({ events, onBoundsChange, onEventClick }: Props) {
             "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
           }}
           paint={{
-            "text-color": "#ffffff",
+            "text-color": "#e6edf3",
           }}
         />
 
@@ -142,10 +142,10 @@ export default function Map({ events, onBoundsChange, onEventClick }: Props) {
           type="circle"
           filter={["!", ["has", "point_count"]]}
           paint={{
-            "circle-color": "#f43f5e",
-            "circle-radius": 6,
-            "circle-stroke-width": 1.5,
-            "circle-stroke-color": "rgba(244, 63, 94, 0.35)",
+            "circle-color": "#e5534b",
+            "circle-radius": 5,
+            "circle-stroke-width": 1,
+            "circle-stroke-color": "rgba(229, 83, 75, 0.25)",
             "circle-opacity": 0.9,
           }}
         />

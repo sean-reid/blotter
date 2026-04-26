@@ -1,5 +1,6 @@
 :8888 {
 	handle /api/query* {
+		uri strip_prefix /api/query
 		reverse_proxy clickhouse:8123 {
 			header_up X-ClickHouse-User blotter_readonly
 			header_up X-ClickHouse-Key readonly

@@ -1,3 +1,5 @@
+SET allow_experimental_full_text_index = 1;
+
 CREATE DATABASE IF NOT EXISTS blotter;
 
 CREATE TABLE IF NOT EXISTS blotter.scanner_transcripts (
@@ -7,11 +9,12 @@ CREATE TABLE IF NOT EXISTS blotter.scanner_transcripts (
     duration_ms   UInt32,
     audio_url     String,
     transcript    String,
+    segments      String DEFAULT '',
+    tags          String DEFAULT '',
     created_at    DateTime64(3) DEFAULT now64(3),
     INDEX idx_transcript transcript TYPE full_text(0) GRANULARITY 1
 ) ENGINE = MergeTree()
-ORDER BY (feed_id, archive_ts)
-SETTINGS allow_experimental_full_text_index = 1;
+ORDER BY (feed_id, archive_ts);
 
 CREATE TABLE IF NOT EXISTS blotter.scanner_events (
     feed_id       LowCardinality(String),
@@ -23,6 +26,8 @@ CREATE TABLE IF NOT EXISTS blotter.scanner_events (
     longitude     Float64,
     h3_index      UInt64 MATERIALIZED geoToH3(longitude, latitude, 9),
     confidence    Float32,
+    context       String DEFAULT '',
+    tags          String DEFAULT '',
     created_at    DateTime64(3) DEFAULT now64(3)
 ) ENGINE = MergeTree()
 ORDER BY (toDate(event_ts), h3_index, event_ts);

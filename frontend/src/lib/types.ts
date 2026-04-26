@@ -7,6 +7,14 @@ export interface ScannerEvent {
   latitude: number;
   longitude: number;
   confidence: number;
+  context: string;
+  tags: string;
+}
+
+export interface TranscriptSegment {
+  start: number;
+  end: number;
+  text: string;
 }
 
 export interface TranscriptResult {
@@ -16,6 +24,8 @@ export interface TranscriptResult {
   duration_ms: number;
   audio_url: string;
   transcript: string;
+  segments: string;
+  tags: string;
 }
 
 export interface TimeRange {

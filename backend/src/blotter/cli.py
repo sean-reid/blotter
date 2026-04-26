@@ -1,5 +1,3 @@
-from datetime import datetime, timezone
-
 import typer
 
 from blotter.config import get_settings
@@ -10,92 +8,17 @@ log = get_logger(__name__)
 
 
 @app.command()
-def fetch(feed_id: str) -> None:
-    """Fetch archive listings for a feed."""
-    settings = get_settings()
-    from blotter.stages.fetch import BroadcastifyClient
-
-    bc = BroadcastifyClient(settings.broadcastify)
-    try:
-        blocks = bc.get_archives(feed_id)
-        for b in blocks:
-            typer.echo(f"{b.timestamp.isoformat()}  {b.duration_ms}ms  {b.url}")
-    finally:
-        bc.close()
-
-
-@app.command()
-def download(feed_id: str) -> None:
-    """Download and convert audio for a feed."""
-    settings = get_settings()
-    from blotter.stages.download import AudioDownloader
-    from blotter.stages.fetch import BroadcastifyClient
-
-    bc = BroadcastifyClient(settings.broadcastify)
-    dl = AudioDownloader(settings.broadcastify, settings.data_dir)
-    try:
-        blocks = bc.get_archives(feed_id)
-        for block in blocks:
-            path = dl.download_and_convert(block)
-            typer.echo(f"ready: {path}")
-    finally:
-        bc.close()
-        dl.close()
-
-
-@app.command()
-def transcribe(feed_id: str) -> None:
-    """Transcribe pending audio for a feed."""
-    settings = get_settings()
-    from blotter.db import get_client, insert_transcript, transcript_exists
-    from blotter.models import Transcript
-    from blotter.stages.download import AudioDownloader
-    from blotter.stages.fetch import BroadcastifyClient
-    from blotter.stages.transcribe import Transcriber
-
-    bc = BroadcastifyClient(settings.broadcastify)
-    dl = AudioDownloader(settings.broadcastify, settings.data_dir)
-    tr = Transcriber(settings.transcription)
-    client = get_client(settings.clickhouse)
-
-    try:
-        blocks = bc.get_archives(feed_id)
-        for block in blocks:
-            ts_str = block.timestamp.isoformat()
-            if transcript_exists(client, feed_id, ts_str):
-                log.info("already transcribed", ts=ts_str)
-                continue
-
-            wav = dl.download_and_convert(block)
-            segments, full_text = tr.transcribe(wav)
-
-            t = Transcript(
-                feed_id=block.feed_id,
-                feed_name=block.feed_name,
-                archive_ts=block.timestamp,
-                duration_ms=block.duration_ms,
-                audio_url=block.url,
-                segments=segments,
-                full_text=full_text,
-            )
-            insert_transcript(client, t)
-            typer.echo(f"transcribed: {ts_str} ({len(segments)} segments)")
-    finally:
-        bc.close()
-        dl.close()
-
-
-@app.command()
 def extract(feed_id: str) -> None:
     """Extract locations and geocode for a feed's transcripts."""
     settings = get_settings()
     from blotter.db import get_client, insert_events
     from blotter.models import GeocodedEvent
-    from blotter.stages.extract import extract_locations
+    from blotter.stages.extract import extract_clauses
+    from blotter.stages.extract_nlp import extract_entities
     from blotter.stages.geocode import Geocoder
 
     client = get_client(settings.clickhouse)
-    geocoder = Geocoder(settings.nominatim)
+    geocoder = Geocoder(settings.google_geocoding, settings.region)
 
     rows = client.query(
         "SELECT feed_id, archive_ts, transcript FROM blotter.scanner_transcripts "
@@ -107,47 +30,110 @@ def extract(feed_id: str) -> None:
 
     for row in rows.result_rows:
         fid, archive_ts, transcript = row
-        locations = extract_locations(transcript)
+        nlp_entities = extract_entities(transcript, settings.google_nlp)
+        clauses = nlp_entities if nlp_entities else extract_clauses(transcript)
         events: list[GeocodedEvent] = []
-        for loc in locations:
-            coords = geocoder.geocode(loc)
-            if coords is None:
+        for clause in clauses:
+            result = geocoder.geocode(clause)
+            if result is None:
                 continue
+            lat, lon, resolved_name = result
             events.append(GeocodedEvent(
                 feed_id=fid,
                 archive_ts=archive_ts,
                 event_ts=archive_ts,
-                raw_location=loc.raw_text,
-                normalized=loc.normalized,
-                latitude=coords[0],
-                longitude=coords[1],
-                confidence=loc.confidence,
+                raw_location=clause.raw_text,
+                normalized=resolved_name,
+                latitude=lat,
+                longitude=lon,
+                confidence=0.8,
+                context=clause.context,
             ))
         insert_events(client, events)
         typer.echo(f"extracted: {archive_ts} -> {len(events)} events")
 
 
-@app.command()
-def run(feed_id: str) -> None:
-    """Run full pipeline for a feed."""
+stream_app = typer.Typer(name="stream", help="Real-time stream capture and processing")
+app.add_typer(stream_app)
+
+
+@stream_app.command("start")
+def stream_start(
+    capture: bool = typer.Option(True, help="Run capture workers"),
+    transcribe_worker: bool = typer.Option(True, "--transcribe", help="Run transcription worker"),
+    process: bool = typer.Option(True, help="Run processing worker"),
+) -> None:
+    """Start real-time stream capture and processing."""
+    import multiprocessing
+
     settings = get_settings()
-    from blotter.stages.ingest import run_pipeline
-    run_pipeline(settings, feed_id)
+    procs: list[multiprocessing.Process] = []
+
+    if capture:
+        from blotter.stages.worker import run_capture
+        p = multiprocessing.Process(
+            target=run_capture,
+            args=(settings.stream, settings.gcs, settings.redis),
+            name="capture",
+        )
+        procs.append(p)
+
+    if transcribe_worker:
+        from blotter.stages.worker import run_transcriber
+        p = multiprocessing.Process(
+            target=run_transcriber,
+            args=(settings.transcription, settings.stream, settings.gcs, settings.redis, settings.clickhouse),
+            name="transcriber",
+        )
+        procs.append(p)
+
+    if process:
+        from blotter.stages.worker import run_processor
+        p = multiprocessing.Process(
+            target=run_processor,
+            args=(settings.redis, settings.clickhouse, settings.google_nlp, settings.google_geocoding, settings.region),
+            name="processor",
+        )
+        procs.append(p)
+
+    for p in procs:
+        p.start()
+        log.info("started worker", name=p.name, pid=p.pid)
+
+    typer.echo(f"Started {len(procs)} workers. Press Ctrl+C to stop.")
+
+    try:
+        for p in procs:
+            p.join()
+    except KeyboardInterrupt:
+        typer.echo("\nStopping workers...")
+        for p in procs:
+            p.terminate()
+        for p in procs:
+            p.join(timeout=10)
 
 
-@app.command()
-def run_all() -> None:
-    """Run full pipeline for all configured feeds."""
+@stream_app.command("status")
+def stream_status() -> None:
+    """Show stream capture status."""
     settings = get_settings()
-    from blotter.stages.ingest import run_pipeline
+    from blotter.queue import get_redis, queue_depth, CAPTURE_QUEUE, TRANSCRIPT_QUEUE
 
-    if not settings.feed_ids:
-        typer.echo("No feed_ids configured. Set FEED_IDS env var.")
+    r = get_redis(settings.redis)
+    try:
+        r.ping()
+        typer.echo("Redis: connected")
+    except Exception:
+        typer.echo("Redis: not reachable")
         raise typer.Exit(1)
 
-    for feed_id in settings.feed_ids:
-        log.info("starting feed", feed_id=feed_id)
-        run_pipeline(settings, feed_id)
+    typer.echo(f"Capture queue depth: {queue_depth(r, CAPTURE_QUEUE)}")
+    typer.echo(f"Transcript queue depth: {queue_depth(r, TRANSCRIPT_QUEUE)}")
+
+    feeds = settings.stream.get_feeds()
+    typer.echo(f"\nConfigured feeds ({len(feeds)}):")
+    for fid, name in feeds.items():
+        typer.echo(f"  {fid}: {name}")
 
 
 if __name__ == "__main__":

@@ -1,58 +1,104 @@
 from functools import lru_cache
 
-from geopy.geocoders import Nominatim
+import httpx
 from shapely.geometry import Point, box
 
-from blotter.config import NominatimConfig
+from blotter.config import GoogleGeocodingConfig, RegionConfig
 from blotter.log import get_logger
 from blotter.models import ExtractedLocation
 
 log = get_logger(__name__)
 
-SCC_BBOX = box(-122.2, 36.9, -121.2, 37.5)
+ROAD_TYPES = {"route", "intersection", "street_address"}
+
+
+class PlaceResult:
+    __slots__ = ("name", "lat", "lon", "types")
+
+    def __init__(self, name: str, lat: float, lon: float, types: list[str]) -> None:
+        self.name = name
+        self.lat = lat
+        self.lon = lon
+        self.types = types
+
+    @property
+    def is_road(self) -> bool:
+        if set(self.types) & ROAD_TYPES:
+            return True
+        if "/" in self.name and "transit_station" in self.types:
+            return True
+        return False
 
 
 class Geocoder:
-    def __init__(self, config: NominatimConfig) -> None:
-        self.config = config
-        viewbox_parts = config.viewbox.split(",")
-        self.viewbox = (
-            (float(viewbox_parts[0]), float(viewbox_parts[1])),
-            (float(viewbox_parts[2]), float(viewbox_parts[3])),
-        )
-        self.nominatim = Nominatim(
-            domain=config.url.replace("http://", "").replace("https://", ""),
-            scheme="http",
-            user_agent="blotter/0.1",
-        )
+    def __init__(self, config: GoogleGeocodingConfig, region: RegionConfig) -> None:
+        self.api_key = config.api_key
+        self.region = region
+        self._bbox = box(region.bbox_west, region.bbox_south, region.bbox_east, region.bbox_north)
 
-    @lru_cache(maxsize=2048)
-    def _geocode_string(self, query: str) -> tuple[float, float] | None:
+    def _in_bounds(self, lat: float, lon: float) -> bool:
+        return self._bbox.contains(Point(lon, lat))
+
+    @lru_cache(maxsize=4096)
+    def _places_lookup(self, query: str) -> PlaceResult | None:
         try:
-            result = self.nominatim.geocode(
-                query,
-                viewbox=self.viewbox,
-                bounded=self.config.bounded,
-                country_codes=self.config.country_codes,
-                exactly_one=True,
+            resp = httpx.get(
+                "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
+                params={
+                    "input": query,
+                    "inputtype": "textquery",
+                    "fields": "geometry,name,types",
+                    "locationbias": self.region.places_bias,
+                    "key": self.api_key,
+                },
                 timeout=10,
             )
+            resp.raise_for_status()
+            data = resp.json()
         except Exception:
-            log.warning("geocoding failed", query=query)
+            log.warning("places lookup failed", query=query)
             return None
 
+        candidates = data.get("candidates", [])
+        if not candidates:
+            return None
+
+        c = candidates[0]
+        loc = c["geometry"]["location"]
+        return PlaceResult(
+            name=c.get("name", ""),
+            lat=loc["lat"],
+            lon=loc["lng"],
+            types=c.get("types", []),
+        )
+
+    def _resolve(self, query: str, label: str) -> tuple[float, float, str] | None:
+        result = self._places_lookup(query)
         if result is None:
             return None
+        if not result.is_road:
+            log.debug("not a road", clause=label[:60], name=result.name, types=result.types[:3])
+            return None
+        if not self._in_bounds(result.lat, result.lon):
+            log.debug("outside bounds", clause=label[:60], lat=result.lat, lon=result.lon)
+            return None
+        log.info("resolved", clause=label[:60], name=result.name, lat=result.lat, lon=result.lon)
+        return (result.lat, result.lon, result.name)
 
-        point = Point(result.longitude, result.latitude)
-        if not SCC_BBOX.contains(point):
-            log.debug("geocode result outside SCC bounds", query=query, lat=result.latitude, lon=result.longitude)
+    def geocode(self, location: ExtractedLocation) -> tuple[float, float, str] | None:
+        clause = location.normalized
+        suffix = self.region.location_suffix
+
+        if location.source == "nlp_intersection" and " and " in clause:
+            parts = clause.split(" and ", 1)
+            queries = [
+                f"intersection of {parts[0]} and {parts[1]}, {suffix}",
+                f"{parts[0]} & {parts[1]}, {suffix}",
+            ]
+            for q in queries:
+                result = self._resolve(q, clause)
+                if result:
+                    return result
             return None
 
-        return (result.latitude, result.longitude)
-
-    def geocode(self, location: ExtractedLocation) -> tuple[float, float] | None:
-        result = self._geocode_string(location.normalized)
-        if result is None:
-            result = self._geocode_string(f"{location.normalized}, Santa Clara County, CA")
-        return result
+        return self._resolve(f"{clause}, {suffix}", clause)

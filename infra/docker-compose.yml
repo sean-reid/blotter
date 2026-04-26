@@ -6,6 +6,7 @@ services:
       - "9000:9000"
     volumes:
       - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./clickhouse/users.xml:/etc/clickhouse-server/users.d/users.xml
       - clickhouse_data:/var/lib/clickhouse
     environment:
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
@@ -14,18 +15,13 @@ services:
         soft: 262144
         hard: 262144
 
-  nominatim:
-    image: mediagis/nominatim:4.4
+  redis:
+    image: redis:7-alpine
     ports:
-      - "8080:8080"
-    environment:
-      PBF_URL: https://download.geofabrik.de/north-america/us/california-latest.osm.pbf
-      NOMINATIM_PASSWORD: nominatim
-      POSTGRES_SHARED_BUFFERS: 2GB
-      POSTGRES_MAINTENANCE_WORK_MEM: 1GB
+      - "6379:6379"
     volumes:
-      - nominatim_data:/var/lib/postgresql/14/main
-    shm_size: 1g
+      - redis_data:/data
+    command: redis-server --appendonly yes
 
   caddy:
     image: caddy:2-alpine
@@ -37,5 +33,5 @@ services:
 
 volumes:
   clickhouse_data:
-  nominatim_data:
+  redis_data:
   caddy_data:

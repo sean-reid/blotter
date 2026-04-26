@@ -6,19 +6,26 @@ from blotter.models import TranscriptSegment
 
 log = get_logger(__name__)
 
-POLICE_PROMPT = (
+DEFAULT_PROMPT_FILE = Path(__file__).resolve().parent.parent.parent.parent / "config" / "whisper_prompt.txt"
+
+DEFAULT_PROMPT = (
     "Police radio dispatch. 10-4, copy, code 3, code 2, suspect vehicle, "
-    "responding unit, en route, on scene, clear, dispatch, copy that, "
-    "10-97, 10-98, 10-99, welfare check, traffic stop, DUI, 211, 459, 487, "
-    "San Jose, Santa Clara, Sunnyvale, Mountain View, Palo Alto, Cupertino, "
-    "El Camino Real, Stevens Creek, Lawrence Expressway, Highway 101, Interstate 280."
+    "responding unit, en route, on scene, clear, dispatch, copy that."
 )
+
+
+def _load_prompt(config: TranscriptionConfig) -> str:
+    path = Path(config.prompt_file) if config.prompt_file else DEFAULT_PROMPT_FILE
+    if path.exists():
+        return path.read_text().strip()
+    return DEFAULT_PROMPT
 
 
 class Transcriber:
     def __init__(self, config: TranscriptionConfig) -> None:
         self.config = config
         self._model = None
+        self._prompt = _load_prompt(config)
 
     @property
     def model(self):
@@ -51,7 +58,7 @@ class Transcriber:
             language=self.config.language,
             vad_filter=self.config.vad_filter,
             vad_parameters=vad_params,
-            initial_prompt=POLICE_PROMPT,
+            initial_prompt=self._prompt,
         )
 
         segments = []
