@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.venv/
+*.egg
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Audio data
+data/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# AI tooling
+.claude/
+CLAUDE.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+frontend/dist/
+
+# Test artifacts
+htmlcov/
+.coverage
+.pytest_cache/
+test-results/
+playwright-report/
+
+# ClickHouse local data
+infra/clickhouse/data/
+
+# Nominatim local data
+infra/nominatim/data/

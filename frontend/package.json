@@ -1,0 +1,38 @@
+{
+  "name": "blotter-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "lint": "tsc --noEmit && eslint .",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "maplibre-gl": "^4.7",
+    "nouislider": "^15.8",
+    "react": "^19.0",
+    "react-dom": "^19.0",
+    "react-map-gl": "^7.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17",
+    "@playwright/test": "^1.49",
+    "@types/nouislider": "^15.0",
+    "@types/react": "^19.0",
+    "@types/react-dom": "^19.0",
+    "@vitejs/plugin-react": "^4.3",
+    "autoprefixer": "^10.4",
+    "eslint": "^9.17",
+    "eslint-plugin-react-hooks": "^5.0",
+    "eslint-plugin-react-refresh": "^0.4",
+    "globals": "^15.14",
+    "postcss": "^8.4",
+    "tailwindcss": "^3.4",
+    "typescript": "~5.7",
+    "typescript-eslint": "^8.18",
+    "vite": "^6.0"
+  }
+}
