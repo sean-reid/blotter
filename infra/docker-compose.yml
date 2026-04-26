@@ -31,6 +31,16 @@ services:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
 
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel run
+    volumes:
+      - ./cloudflared/config.yml:/etc/cloudflared/config.yml
+      - ./cloudflared/credentials.json:/etc/cloudflared/credentials.json
+    depends_on:
+      - clickhouse
+    restart: unless-stopped
+
 volumes:
   clickhouse_data:
   redis_data:

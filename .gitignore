@@ -48,3 +48,6 @@ infra/clickhouse/data/
 
 # Nominatim local data
 infra/nominatim/data/
+
+# Cloudflare tunnel credentials
+infra/cloudflared/credentials.json

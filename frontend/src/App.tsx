@@ -24,21 +24,15 @@ export default function App() {
   const [rawInput, setRawInput] = useState("");
   const [transcriptResults, setTranscriptResults] = useState<TranscriptResult[]>([]);
   const [selectedTranscript, setSelectedTranscript] = useState<TranscriptResult | null>(null);
-  const [bounds, setBounds] = useState<{
-    west: number;
-    south: number;
-    east: number;
-    north: number;
-  } | null>(null);
   const loadEvents = useCallback(async () => {
     const data = await fetchEvents(
       timeRange.start,
       timeRange.end,
-      bounds ?? undefined,
+      undefined,
       searchQuery || undefined,
     );
     setEvents(data);
-  }, [timeRange, bounds, searchQuery]);
+  }, [timeRange, searchQuery]);
 
   const loadTranscripts = useCallback(async () => {
     if (!rawInput.trim()) {
@@ -92,7 +86,6 @@ export default function App() {
     <div className="h-full w-full relative" style={{ background: "#0d1117" }}>
       <Map
         events={events}
-        onBoundsChange={setBounds}
         onEventClick={handleEventClick}
       />
 

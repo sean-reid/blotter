@@ -13,12 +13,6 @@ const LA_CENTER = { longitude: -118.35, latitude: 34.05 };
 
 interface Props {
   events: ScannerEvent[];
-  onBoundsChange?: (bounds: {
-    west: number;
-    south: number;
-    east: number;
-    north: number;
-  }) => void;
   onEventClick?: (event: ScannerEvent) => void;
 }
 
@@ -41,20 +35,8 @@ function eventsToGeoJSON(events: ScannerEvent[]): GeoJSON.FeatureCollection {
   };
 }
 
-export default function Map({ events, onBoundsChange, onEventClick }: Props) {
+export default function Map({ events, onEventClick }: Props) {
   const mapRef = useRef<MapRef>(null);
-
-  const handleMoveEnd = useCallback(() => {
-    const map = mapRef.current;
-    if (!map || !onBoundsChange) return;
-    const b = map.getBounds();
-    onBoundsChange({
-      west: b.getWest(),
-      south: b.getSouth(),
-      east: b.getEast(),
-      north: b.getNorth(),
-    });
-  }, [onBoundsChange]);
 
   const fitAll = useCallback(() => {
     const map = mapRef.current;
@@ -89,7 +71,6 @@ export default function Map({ events, onBoundsChange, onEventClick }: Props) {
       }}
       style={{ width: "100%", height: "100%" }}
       mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
-      onMoveEnd={handleMoveEnd}
       onClick={handleClick}
       interactiveLayerIds={["events-unclustered"]}
       pitchWithRotate={false}
