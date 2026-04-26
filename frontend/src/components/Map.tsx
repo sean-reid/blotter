@@ -1,4 +1,5 @@
 import "maplibre-gl/dist/maplibre-gl.css";
+import { LngLatBounds } from "maplibre-gl";
 import { useCallback, useRef } from "react";
 import MapGL, {
   Layer,
@@ -55,6 +56,16 @@ export default function Map({ events, onBoundsChange, onEventClick }: Props) {
     });
   }, [onBoundsChange]);
 
+  const fitAll = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || events.length === 0) return;
+    const bounds = new LngLatBounds();
+    for (const e of events) {
+      bounds.extend([e.longitude, e.latitude]);
+    }
+    map.fitBounds(bounds, { padding: 60, maxZoom: 14 });
+  }, [events]);
+
   const handleClick = useCallback(
     (e: maplibregl.MapLayerMouseEvent) => {
       if (!onEventClick || !e.features?.length) return;
@@ -85,6 +96,30 @@ export default function Map({ events, onBoundsChange, onEventClick }: Props) {
       cursor="default"
     >
       <NavigationControl position="top-right" showCompass={false} />
+
+      {events.length > 0 && (
+        <div className="maplibregl-ctrl maplibregl-ctrl-group absolute right-[10px] top-[78px] z-10">
+          <button
+            onClick={fitAll}
+            title="Fit all events"
+            type="button"
+            className="maplibregl-ctrl-icon"
+            style={{
+              width: 29,
+              height: 29,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundImage: "none",
+            }}
+          >
+            <svg width="17" height="17" fill="none" stroke="#333" viewBox="0 0 24 24" strokeWidth={2.5} style={{ filter: "invert(0.85)" }}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4" />
+            </svg>
+          </button>
+        </div>
+      )}
+
 
       <Source
         id="events"

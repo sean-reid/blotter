@@ -1,5 +1,6 @@
-import { useState } from "react";
-import type { TranscriptResult, TranscriptSegment } from "../lib/types";
+import { useEffect, useState } from "react";
+import type { ScannerEvent, TranscriptResult, TranscriptSegment } from "../lib/types";
+import { fetchEventForTranscript } from "../lib/api";
 import Tags from "./Tags";
 import TranscriptPlayer from "./TranscriptPlayer";
 
@@ -38,6 +39,16 @@ function parseSegments(raw: string): TranscriptSegment[] {
 
 export default function TranscriptPanel({ transcript, onClose }: Props) {
   const [visible] = useState(true);
+  const [event, setEvent] = useState<ScannerEvent | null>(null);
+
+  useEffect(() => {
+    setEvent(null);
+    fetchEventForTranscript(transcript.feed_id, transcript.archive_ts)
+      .then(setEvent)
+      .catch(() => setEvent(null));
+  }, [transcript.feed_id, transcript.archive_ts]);
+
+  const tags = transcript.tags || event?.tags;
 
   return (
     <>
@@ -76,7 +87,9 @@ export default function TranscriptPanel({ transcript, onClose }: Props) {
         </div>
 
         <div className="shrink-0 border-b border-[#2d333b] px-4 py-3 flex justify-between items-center">
-          <h3 className="font-medium text-sm text-[#e6edf3]">Transcript</h3>
+          <h3 className="font-medium text-sm text-[#e6edf3]">
+            {event ? "Event" : "Transcript"}
+          </h3>
           <button
             onClick={onClose}
             className="
@@ -95,25 +108,51 @@ export default function TranscriptPanel({ transcript, onClose }: Props) {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          <div className="flex gap-6">
-            <div className="flex-1">
-              <FieldLabel>Feed</FieldLabel>
-              <div className="text-sm text-[#adbac7]">
-                {transcript.feed_name || transcript.feed_id}
+          {event && (
+            <div>
+              <FieldLabel>Location</FieldLabel>
+              <div className="text-sm font-medium text-[#e6edf3] leading-snug">
+                {event.normalized}
+              </div>
+              {event.raw_location !== event.normalized && (
+                <div className="text-xs text-[#545d68] mt-0.5">
+                  {event.raw_location}
+                </div>
+              )}
+              <div className="text-[11px] text-[#545d68] tabular-nums font-mono mt-1">
+                {event.latitude.toFixed(5)}, {event.longitude.toFixed(5)}
               </div>
             </div>
-            <div>
+          )}
+
+          <div className="flex gap-6">
+            <div className="flex-1">
               <FieldLabel>Time</FieldLabel>
               <div className="text-sm text-[#adbac7] tabular-nums">
-                {formatDate(transcript.archive_ts)}
+                {formatDate(event?.event_ts ?? transcript.archive_ts)}
               </div>
+            </div>
+            {event && (
+              <div>
+                <FieldLabel>Confidence</FieldLabel>
+                <span className="text-sm tabular-nums text-[#adbac7]">
+                  {Math.round(event.confidence * 100)}%
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <FieldLabel>Feed</FieldLabel>
+            <div className="text-sm text-[#adbac7]">
+              {transcript.feed_name || transcript.feed_id}
             </div>
           </div>
 
-          {transcript.tags && (
+          {tags && (
             <div>
               <FieldLabel>Codes</FieldLabel>
-              <Tags tags={transcript.tags} />
+              <Tags tags={tags} />
             </div>
           )}
 
@@ -122,6 +161,7 @@ export default function TranscriptPanel({ transcript, onClose }: Props) {
             <TranscriptPlayer
               audioUrl={transcript.audio_url}
               segments={parseSegments(transcript.segments)}
+              context={event?.context}
             />
           </div>
 

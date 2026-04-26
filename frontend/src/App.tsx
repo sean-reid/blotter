@@ -12,7 +12,7 @@ const POLL_INTERVAL = 15_000;
 
 function freshDefault(): TimeRange {
   const now = Math.floor(Date.now() / 1000);
-  return { start: now - 86400, end: now };
+  return { start: now - 21600, end: now };
 }
 
 export default function App() {
@@ -30,8 +30,6 @@ export default function App() {
     east: number;
     north: number;
   } | null>(null);
-  const pollTick = useRef(0);
-
   const loadEvents = useCallback(async () => {
     const data = await fetchEvents(
       timeRange.start,

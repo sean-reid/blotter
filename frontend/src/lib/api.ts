@@ -67,6 +67,23 @@ export async function fetchTranscriptForEvent(
   return results[0] ?? null;
 }
 
+export async function fetchEventForTranscript(
+  feedId: string,
+  archiveTs: string,
+): Promise<ScannerEvent | null> {
+  const escaped = feedId.replace(/'/g, "\\'");
+  const sql =
+    `SELECT feed_id, archive_ts, event_ts, raw_location, normalized, ` +
+    `latitude, longitude, confidence, context, tags ` +
+    `FROM blotter.scanner_events ` +
+    `WHERE feed_id = '${escaped}' ` +
+    `AND abs(toInt64(toDateTime64(archive_ts, 3)) - toInt64(toDateTime64('${archiveTs}', 3))) < 120 ` +
+    `ORDER BY abs(toInt64(toDateTime64(archive_ts, 3)) - toInt64(toDateTime64('${archiveTs}', 3))) ASC ` +
+    `LIMIT 1`;
+  const results = await query<ScannerEvent>(sql);
+  return results[0] ?? null;
+}
+
 export async function searchTranscripts(
   term: string,
   startTs: number,

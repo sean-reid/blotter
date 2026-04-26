@@ -1,3 +1,4 @@
+import * as chrono from "chrono-node";
 import type { TimeRange } from "./types";
 
 interface ParseResult {
@@ -11,53 +12,25 @@ const WORD_NUMBERS: Record<string, number> = {
   eleven: 11, twelve: 12, twenty: 20, thirty: 30,
 };
 
+const SHORTHAND_RE =
+  /\b(?:last|past)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty)?\s*(hours?|hrs?|h|minutes?|mins?|m|days?|d|weeks?|wks?|w)\b/i;
+
 export function parseTimeFilter(input: string): ParseResult {
   const now = Math.floor(Date.now() / 1000);
 
-  const relativeMatch = input.match(
-    /\b(?:last|past)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty)?\s*(hours?|hrs?|h|minutes?|mins?|m|days?|d|weeks?|wks?|w)\b/i,
-  );
-  if (relativeMatch) {
-    const rawN = relativeMatch[1];
+  const shorthand = input.match(SHORTHAND_RE);
+  if (shorthand) {
+    const rawN = shorthand[1];
     const n = rawN
       ? (WORD_NUMBERS[rawN.toLowerCase()] ?? parseInt(rawN)) || 1
       : 1;
-    const unit = relativeMatch[2]![0]!.toLowerCase();
+    const unit = shorthand[2]![0]!.toLowerCase();
     const mult: Record<string, number> = {
-      h: 3600,
-      m: 60,
-      d: 86400,
-      w: 604800,
+      h: 3600, m: 60, d: 86400, w: 604800,
     };
     return {
-      cleanQuery: strip(input, relativeMatch[0]),
+      cleanQuery: strip(input, shorthand[0]),
       timeRange: { start: now - n * (mult[unit] ?? 3600), end: now },
-    };
-  }
-
-  const todayMatch = input.match(/\btoday\b/i);
-  if (todayMatch) {
-    const sod = new Date();
-    sod.setHours(0, 0, 0, 0);
-    return {
-      cleanQuery: strip(input, todayMatch[0]),
-      timeRange: { start: Math.floor(sod.getTime() / 1000), end: now },
-    };
-  }
-
-  const yesterdayMatch = input.match(/\byesterday\b/i);
-  if (yesterdayMatch) {
-    const start = new Date();
-    start.setDate(start.getDate() - 1);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date();
-    end.setHours(0, 0, 0, 0);
-    return {
-      cleanQuery: strip(input, yesterdayMatch[0]),
-      timeRange: {
-        start: Math.floor(start.getTime() / 1000),
-        end: Math.floor(end.getTime() / 1000),
-      },
     };
   }
 
@@ -71,21 +44,45 @@ export function parseTimeFilter(input: string): ParseResult {
     };
   }
 
-  const eveningMatch = input.match(/\b(?:tonight|this\s+evening)\b/i);
-  if (eveningMatch) {
+  const tonightMatch = input.match(/\b(?:tonight|this\s+evening)\b/i);
+  if (tonightMatch) {
     const sixPm = new Date();
     sixPm.setHours(18, 0, 0, 0);
     return {
-      cleanQuery: strip(input, eveningMatch[0]),
+      cleanQuery: strip(input, tonightMatch[0]),
       timeRange: { start: Math.floor(sixPm.getTime() / 1000), end: now },
     };
   }
 
-  const weekMatch = input.match(/\bthis\s+week\b/i);
-  if (weekMatch) {
+  const parsed = chrono.parse(input, new Date(), { forwardDate: false });
+  if (parsed.length > 0) {
+    const result = parsed[0]!;
+    const startDate = result.start.date();
+    const noTime = !result.start.isCertain("hour") && !result.start.isCertain("minute");
+    let endDate: Date;
+
+    if (noTime) {
+      startDate.setHours(0, 0, 0, 0);
+    }
+
+    if (result.end) {
+      endDate = result.end.date();
+    } else if (noTime) {
+      endDate = new Date(startDate);
+      endDate.setHours(23, 59, 59, 999);
+      if (endDate.getTime() > Date.now()) {
+        endDate = new Date();
+      }
+    } else {
+      endDate = new Date(Math.min(startDate.getTime() + 3600_000, Date.now()));
+    }
+
     return {
-      cleanQuery: strip(input, weekMatch[0]),
-      timeRange: { start: now - 604800, end: now },
+      cleanQuery: strip(input, result.text),
+      timeRange: {
+        start: Math.floor(startDate.getTime() / 1000),
+        end: Math.floor(endDate.getTime() / 1000),
+      },
     };
   }
 
