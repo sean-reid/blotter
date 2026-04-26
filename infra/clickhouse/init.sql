@@ -1,5 +1,3 @@
-SET allow_experimental_full_text_index = 1;
-
 CREATE DATABASE IF NOT EXISTS blotter;
 
 CREATE TABLE IF NOT EXISTS blotter.scanner_transcripts (
@@ -11,8 +9,7 @@ CREATE TABLE IF NOT EXISTS blotter.scanner_transcripts (
     transcript    String,
     segments      String DEFAULT '',
     tags          String DEFAULT '',
-    created_at    DateTime64(3) DEFAULT now64(3),
-    INDEX idx_transcript transcript TYPE full_text(0) GRANULARITY 1
+    created_at    DateTime64(3) DEFAULT now64(3)
 ) ENGINE = MergeTree()
 ORDER BY (feed_id, archive_ts);
 

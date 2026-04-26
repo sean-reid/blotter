@@ -1,56 +1,85 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "=== Blotter RunPod Setup ==="
+REPO_DIR=/workspace/blotter
+
+echo "=== Blotter RunPod Start ==="
 
 # Install system dependencies
 apt-get update -qq
-apt-get install -y -qq ffmpeg docker.io docker-compose redis-server curl git > /dev/null 2>&1
-echo "[OK] System packages installed"
+apt-get install -y -qq ffmpeg redis-server curl git > /dev/null 2>&1
+echo "[OK] System packages"
 
-# Start Docker
-service docker start || true
-echo "[OK] Docker started"
-
-# Start Redis
-service redis-server start || true
-echo "[OK] Redis started"
-
-# Clone/update repo
-if [ -d /workspace/blotter ]; then
-  cd /workspace/blotter && git pull
-else
-  git clone https://github.com/sean-reid/blotter.git /workspace/blotter
+# Install ClickHouse
+if ! command -v clickhouse-server &>/dev/null; then
+  curl -sSf https://clickhouse.com/ | sh
+  ./clickhouse install 2>&1 | tail -3
+  rm -f clickhouse
 fi
-cd /workspace/blotter
-echo "[OK] Repo ready"
+echo "[OK] ClickHouse"
 
-# Start ClickHouse + cloudflared via Docker Compose
-cd /workspace/blotter/infra
-docker-compose up -d clickhouse cloudflared
-echo "[OK] ClickHouse + cloudflared running"
+# Install cloudflared
+if ! command -v cloudflared &>/dev/null; then
+  curl -sSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+    -o /usr/local/bin/cloudflared
+  chmod +x /usr/local/bin/cloudflared
+fi
+echo "[OK] cloudflared"
 
-# Wait for ClickHouse
-echo -n "Waiting for ClickHouse..."
+# Install uv
+export PATH="$HOME/.local/bin:$PATH"
+if ! command -v uv &>/dev/null; then
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+fi
+echo "[OK] uv"
+
+# Persistent ClickHouse data on network volume
+mkdir -p /workspace/clickhouse-data /workspace/clickhouse-logs
+[ -L /var/lib/clickhouse ] || (rm -rf /var/lib/clickhouse && ln -sf /workspace/clickhouse-data /var/lib/clickhouse)
+[ -L /var/log/clickhouse-server ] || (rm -rf /var/log/clickhouse-server && ln -sf /workspace/clickhouse-logs /var/log/clickhouse-server)
+
+# Start services
+redis-server --daemonize yes
+clickhouse-server --daemon 2>/dev/null || true
+
+echo -n "Waiting for ClickHouse"
 for i in $(seq 1 30); do
   if curl -s http://localhost:8123/ping > /dev/null 2>&1; then
-    echo " ready"
+    echo " ready!"
     break
   fi
   sleep 1
   echo -n "."
 done
 
-# Install Python dependencies
-cd /workspace/blotter/backend
-pip install -e ".[gpu]" 2>/dev/null || pip install -e . > /dev/null 2>&1
-echo "[OK] Python packages installed"
+# Clone/update repo
+if [ -d "$REPO_DIR" ]; then
+  cd "$REPO_DIR" && git pull 2>/dev/null
+else
+  git clone https://github.com/sean-reid/blotter.git "$REPO_DIR"
+fi
+echo "[OK] Repo"
 
-# Copy GPU env
-cp /workspace/blotter/backend/.env.gpu /workspace/blotter/backend/.env.local
-echo "[OK] GPU config applied"
+# Init schema (idempotent)
+clickhouse-client --multiquery < "$REPO_DIR/infra/clickhouse/init.sql" 2>/dev/null
+echo "[OK] Schema"
+
+# Start cloudflared tunnel
+if [ -f "$REPO_DIR/infra/cloudflared/credentials.json" ]; then
+  nohup cloudflared tunnel --config "$REPO_DIR/infra/cloudflared/config.yml" run &>/var/log/cloudflared.log &
+  echo "[OK] Tunnel"
+else
+  echo "[WARN] No tunnel credentials — copy credentials.json to infra/cloudflared/"
+fi
+
+# Install/sync Python backend
+cd "$REPO_DIR/backend"
+uv sync 2>/dev/null
+echo "[OK] Python packages"
+
+# Start pipeline
+nohup uv run blotter stream start &>/var/log/blotter-pipeline.log &
+echo "[OK] Pipeline started"
 
 echo ""
-echo "=== Setup complete ==="
-echo "Start the pipeline with:"
-echo "  cd /workspace/blotter/backend && uv run blotter stream start"
+echo "=== Blotter running at $(date) ==="

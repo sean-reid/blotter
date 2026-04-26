@@ -2,6 +2,8 @@ interface Env {
   CLICKHOUSE_URL: string;
   CLICKHOUSE_USER: string;
   CLICKHOUSE_PASSWORD: string;
+  CF_ACCESS_CLIENT_ID: string;
+  CF_ACCESS_CLIENT_SECRET: string;
 }
 
 const CORS_HEADERS = {
@@ -44,6 +46,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       "Content-Type": "text/plain",
       "X-ClickHouse-User": env.CLICKHOUSE_USER,
       "X-ClickHouse-Key": env.CLICKHOUSE_PASSWORD,
+      "CF-Access-Client-Id": env.CF_ACCESS_CLIENT_ID,
+      "CF-Access-Client-Secret": env.CF_ACCESS_CLIENT_SECRET,
     },
     body: sql,
   });
