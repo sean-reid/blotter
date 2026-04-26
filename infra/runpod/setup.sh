@@ -2,6 +2,7 @@
 set -euo pipefail
 
 REPO_DIR=/workspace/blotter
+export GOOGLE_APPLICATION_CREDENTIALS=/workspace/blotter-gcs-key.json
 
 echo "=== Blotter RunPod Start ==="
 

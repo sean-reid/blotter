@@ -31,6 +31,9 @@ class LocalStorageClient:
     def public_url(self, gcs_path: str) -> str:
         return f"/audio-data/stream/{gcs_path}"
 
+    def signed_url(self, gcs_path: str, expiration_hours: int = 24) -> str:
+        return self.public_url(gcs_path)
+
     def exists(self, gcs_path: str) -> bool:
         return (self._base / gcs_path).exists()
 

@@ -219,7 +219,7 @@ class StreamCaptureWorker:
         gcs_path = f"{self.feed_id}/{date_str}/{local_path.name}"
 
         self.gcs.upload(local_path, gcs_path)
-        audio_url = self.gcs.public_url(gcs_path)
+        audio_url = self.gcs.signed_url(gcs_path)
 
         duration_ms = self.config.segment_time * 1000
 
