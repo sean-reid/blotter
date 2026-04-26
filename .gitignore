@@ -33,6 +33,8 @@ Thumbs.db
 # Node
 node_modules/
 frontend/dist/
+frontend/public/audio-data
+*.tsbuildinfo
 
 # Test artifacts
 htmlcov/
