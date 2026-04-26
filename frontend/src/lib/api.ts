@@ -59,7 +59,9 @@ export async function fetchTranscriptForEvent(
     `SELECT feed_id, feed_name, archive_ts, duration_ms, audio_url, transcript, segments, tags ` +
     `FROM blotter.scanner_transcripts ` +
     `WHERE feed_id = '${escaped}' ` +
-    `AND archive_ts = '${archiveTs}' ` +
+    `AND length(transcript) > 0 ` +
+    `AND abs(toInt64(archive_ts) - toInt64(toDateTime64('${archiveTs}', 3))) < 120 ` +
+    `ORDER BY abs(toInt64(archive_ts) - toInt64(toDateTime64('${archiveTs}', 3))) ASC ` +
     `LIMIT 1`;
   const results = await query<TranscriptResult>(sql);
   return results[0] ?? null;

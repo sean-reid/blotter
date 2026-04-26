@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import AboutModal from "./components/AboutModal";
 import EventPanel from "./components/EventPanel";
 import Map from "./components/Map";
@@ -8,11 +8,15 @@ import TranscriptPanel from "./components/TranscriptPanel";
 import { fetchEvents, searchTranscripts } from "./lib/api";
 import type { ScannerEvent, TimeRange, TranscriptResult } from "./lib/types";
 
-const now = Math.floor(Date.now() / 1000);
-const DEFAULT_RANGE: TimeRange = { start: now - 86400, end: now };
+const POLL_INTERVAL = 15_000;
+
+function freshDefault(): TimeRange {
+  const now = Math.floor(Date.now() / 1000);
+  return { start: now - 86400, end: now };
+}
 
 export default function App() {
-  const [timeRange, setTimeRange] = useState<TimeRange>(DEFAULT_RANGE);
+  const [timeRange, setTimeRange] = useState<TimeRange>(freshDefault);
   const [events, setEvents] = useState<ScannerEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<ScannerEvent | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -26,31 +30,50 @@ export default function App() {
     east: number;
     north: number;
   } | null>(null);
+  const pollTick = useRef(0);
 
-  useEffect(() => {
-    const load = async () => {
-      const data = await fetchEvents(
-        timeRange.start,
-        timeRange.end,
-        bounds ?? undefined,
-        searchQuery || undefined,
-      );
-      setEvents(data);
-    };
-    load();
+  const loadEvents = useCallback(async () => {
+    const data = await fetchEvents(
+      timeRange.start,
+      timeRange.end,
+      bounds ?? undefined,
+      searchQuery || undefined,
+    );
+    setEvents(data);
   }, [timeRange, bounds, searchQuery]);
 
-  useEffect(() => {
+  const loadTranscripts = useCallback(async () => {
     if (!rawInput.trim()) {
       setTranscriptResults([]);
       return;
     }
-    const load = async () => {
-      const data = await searchTranscripts(searchQuery, timeRange.start, timeRange.end);
-      setTranscriptResults(data);
-    };
-    load();
+    const data = await searchTranscripts(searchQuery, timeRange.start, timeRange.end);
+    setTranscriptResults(data);
   }, [searchQuery, timeRange, rawInput]);
+
+  useEffect(() => { loadEvents(); }, [loadEvents]);
+  useEffect(() => { loadTranscripts(); }, [loadTranscripts]);
+
+  const timeRangeRef = useRef(timeRange);
+  timeRangeRef.current = timeRange;
+  const loadEventsRef = useRef(loadEvents);
+  loadEventsRef.current = loadEvents;
+  const loadTranscriptsRef = useRef(loadTranscripts);
+  loadTranscriptsRef.current = loadTranscripts;
+  const rawInputRef = useRef(rawInput);
+  rawInputRef.current = rawInput;
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const r = timeRangeRef.current;
+      const now = Math.floor(Date.now() / 1000);
+      const duration = r.end - r.start;
+      setTimeRange({ start: now - duration, end: now });
+      loadEventsRef.current();
+      if (rawInputRef.current.trim()) loadTranscriptsRef.current();
+    }, POLL_INTERVAL);
+    return () => clearInterval(id);
+  }, []);
 
   const handleEventClick = useCallback((event: ScannerEvent) => {
     setSelectedEvent(event);

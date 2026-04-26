@@ -12,7 +12,7 @@ log = get_logger(__name__)
 LOCATION_TYPES = {"LOCATION", "ADDRESS"}
 INTERSECTION_ENTITY_TYPES = {"LOCATION", "ADDRESS", "PERSON"}
 
-JUNCTION_RE = re.compile(r"\band\b|\bat\b|&|/", re.IGNORECASE)
+JUNCTION_RE = re.compile(r"\band\b|\bat\b|&|/|,", re.IGNORECASE)
 
 SKIP_NAMES = {
     "location", "area", "block", "scene", "route", "unit", "dispatch",
@@ -21,7 +21,38 @@ SKIP_NAMES = {
     "south", "north", "east", "west", "people", "president",
     "minorities", "corner", "letter location", "island", "street",
     "stop", "roger", "roger that",
+    "southwest", "southeast", "northeast", "northwest",
+    "central", "pacific", "rampart", "hollenbeck", "harbor",
+    "hollywood", "wilshire", "devonshire", "foothill", "topanga",
+    "newton", "olympic", "mission", "van nuys",
+    "division", "bureau", "station", "frequency",
+    "charles", "adam", "lincoln", "mary", "boy", "king", "tom",
+    "front desk", "front", "desk", "system", "radio", "channel",
+    "cash back", "insurance", "commercial", "campus",
+    "wood", "james", "beach", "garden", "park", "hill",
 }
+
+STREET_SUFFIX_RE = re.compile(
+    r"\b(?:street|st|avenue|ave|boulevard|blvd|drive|dr|road|rd|way|"
+    r"lane|ln|place|pl|court|ct|highway|hwy|freeway|fwy)\b",
+    re.IGNORECASE,
+)
+
+CODE_PATTERN_RE = re.compile(
+    r"^(?:RD|rd|incident|code|unit)\s*[-#]?\s*\d+$",
+    re.IGNORECASE,
+)
+
+
+def _is_plausible_location(name: str) -> bool:
+    if CODE_PATTERN_RE.match(name):
+        return False
+    if name.isdigit():
+        return False
+    words = name.split()
+    if len(words) == 1 and not STREET_SUFFIX_RE.search(name):
+        return False
+    return True
 
 
 def _get_context(text: str, mention: str, window: int = 120) -> str:
@@ -75,7 +106,7 @@ def _find_intersections(text: str, entities: list[dict]) -> list[tuple[str, int]
         mention = e.get("mentions", [{}])[0].get("text", {}).get("content", name)
 
         if etype in INTERSECTION_ENTITY_TYPES:
-            if name.lower() in SKIP_NAMES or len(name) < 3 or name.isdigit():
+            if name.lower() in SKIP_NAMES or len(name) < 3 or not _is_plausible_location(name):
                 continue
             located.append((name, offset, len(mention)))
         elif etype == "NUMBER":
@@ -155,7 +186,7 @@ def extract_entities(text: str, config: GoogleNLPConfig) -> list[ExtractedLocati
         name = entity.get("name", "").strip()
         if name.lower() in SKIP_NAMES or len(name) < 3:
             continue
-        if name.isdigit():
+        if not _is_plausible_location(name):
             continue
         key = name.lower()
         if key in seen:

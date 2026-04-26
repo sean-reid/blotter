@@ -90,12 +90,27 @@ def insert_events(client: Client, events: list[GeocodedEvent]) -> None:
     log.info("inserted events", count=len(events), feed_id=events[0].feed_id)
 
 
-def has_recent_event(client: Client, normalized: str, minutes: int = 10) -> bool:
+def has_recent_event(
+    client: Client,
+    normalized: str,
+    lat: float,
+    lon: float,
+    minutes: int = 10,
+    radius_deg: float = 0.002,
+) -> bool:
     result = client.query(
         "SELECT count() FROM scanner_events "
-        "WHERE normalized = {normalized:String} "
-        "AND event_ts > now() - INTERVAL {minutes:UInt32} MINUTE",
-        parameters={"normalized": normalized, "minutes": minutes},
+        "WHERE event_ts > now() - INTERVAL {minutes:UInt32} MINUTE "
+        "AND (normalized = {normalized:String} "
+        "  OR (abs(latitude - {lat:Float64}) < {radius:Float64} "
+        "      AND abs(longitude - {lon:Float64}) < {radius:Float64}))",
+        parameters={
+            "normalized": normalized,
+            "minutes": minutes,
+            "lat": lat,
+            "lon": lon,
+            "radius": radius_deg,
+        },
     )
     return result.first_row[0] > 0
 

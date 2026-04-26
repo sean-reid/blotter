@@ -19,6 +19,31 @@ log = get_logger(__name__)
 BROADCASTIFY_CDN = "https://broadcastify.cdnstream1.com"
 
 
+def _kill_orphan_ffmpeg(feed_id: str) -> None:
+    try:
+        out = subprocess.check_output(
+            ["pgrep", "-f", f"broadcastify.cdnstream1.com/{feed_id}"],
+            text=True,
+        ).strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return
+    pids = [int(p) for p in out.splitlines() if p.strip()]
+    if not pids:
+        return
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except (OSError, ProcessLookupError):
+            pass
+    time.sleep(2)
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGKILL)
+            log.info("killed orphan ffmpeg", feed_id=feed_id, pid=pid)
+        except (OSError, ProcessLookupError):
+            pass
+
+
 class StreamCaptureWorker:
     def __init__(
         self,
@@ -37,6 +62,7 @@ class StreamCaptureWorker:
         self._thread: Thread | None = None
         self._chunk_index = 0
         self._is_fresh_connect = True
+        self._pid_file = Path(self.config.chunk_dir) / f".{self.feed_id}.pid"
 
     @property
     def stream_url(self) -> str:
@@ -49,6 +75,7 @@ class StreamCaptureWorker:
         return d
 
     def start(self) -> None:
+        self._cleanup_stale_pid()
         self._thread = Thread(target=self._run, name=f"capture-{self.feed_id}", daemon=True)
         self._thread.start()
         log.info("capture worker started", feed_id=self.feed_id, feed_name=self.feed_name)
@@ -57,6 +84,22 @@ class StreamCaptureWorker:
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=10)
+        self._pid_file.unlink(missing_ok=True)
+
+    def _write_pid(self, pid: int) -> None:
+        self._pid_file.parent.mkdir(parents=True, exist_ok=True)
+        self._pid_file.write_text(str(pid))
+
+    def _cleanup_stale_pid(self) -> None:
+        if not self._pid_file.exists():
+            return
+        try:
+            old_pid = int(self._pid_file.read_text().strip())
+            os.kill(old_pid, signal.SIGTERM)
+            log.info("killed stale ffmpeg from pid file", feed_id=self.feed_id, pid=old_pid)
+        except (ValueError, OSError, ProcessLookupError):
+            pass
+        self._pid_file.unlink(missing_ok=True)
 
     def _run(self) -> None:
         consecutive_failures = 0
@@ -81,7 +124,22 @@ class StreamCaptureWorker:
                 self._is_fresh_connect = True
                 self._stop.wait(delay)
 
+    def _kill_proc(self, proc: subprocess.Popen) -> None:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except (OSError, ProcessLookupError):
+            pass
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (OSError, ProcessLookupError):
+                proc.kill()
+        self._pid_file.unlink(missing_ok=True)
+
     def _capture_stream(self) -> None:
+        _kill_orphan_ffmpeg(self.feed_id)
         output_pattern = str(self.output_dir / "%Y%m%d_%H%M%S.wav")
 
         cmd = [
@@ -102,6 +160,7 @@ class StreamCaptureWorker:
 
         log.info("starting ffmpeg", feed_id=self.feed_id, url=self.stream_url)
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=os.setsid)
+        self._write_pid(proc.pid)
 
         watcher = Thread(
             target=self._watch_chunks,
@@ -119,17 +178,7 @@ class StreamCaptureWorker:
                     raise RuntimeError(f"ffmpeg exited with code {retcode}")
                 self._stop.wait(1)
         finally:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-            except (OSError, ProcessLookupError):
-                pass
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except (OSError, ProcessLookupError):
-                    proc.kill()
+            self._kill_proc(proc)
 
     def _watch_chunks(self) -> None:
         seen: set[str] = set()
@@ -220,6 +269,11 @@ class CaptureManager:
         if not feeds:
             log.error("no feeds configured")
             return
+
+        log.info("cleaning up orphan ffmpeg processes", feeds=len(feeds))
+        for feed_id in feeds:
+            _kill_orphan_ffmpeg(feed_id)
+        time.sleep(1)
 
         for feed_id, feed_name in feeds.items():
             worker = StreamCaptureWorker(

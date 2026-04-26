@@ -54,6 +54,8 @@ class TranscriptionConfig(BaseSettings):
     vad_filter: bool = True
     vad_min_silence_ms: int = 500
     vad_speech_pad_ms: int = 200
+    no_speech_threshold: float = 0.75
+    condition_on_previous_text: bool = False
     prompt_file: str = ""
 
 

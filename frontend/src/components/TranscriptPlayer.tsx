@@ -84,10 +84,14 @@ export default function TranscriptPlayer({ audioUrl, segments, context }: Props)
   const [playing, setPlaying] = useState(false);
   const [audioError, setAudioError] = useState(false);
   const [ready, setReady] = useState(false);
+  const [audioDuration, setAudioDuration] = useState(0);
 
   const range = context ? findContextRange(segments, context) : null;
   const startTime = range?.startTime ?? 0;
-  const endTime = range?.endTime ?? (segments.length > 0 ? segments[segments.length - 1]!.end : 0);
+  const segEndTime = range?.endTime ?? (segments.length > 0 ? segments[segments.length - 1]!.end : 0);
+  const endTime = audioDuration > 0
+    ? (segEndTime > 0 ? Math.min(segEndTime, audioDuration) : audioDuration)
+    : segEndTime;
   const clipDuration = endTime - startTime;
 
   const visibleSegments = range
@@ -108,12 +112,18 @@ export default function TranscriptPlayer({ audioUrl, segments, context }: Props)
       setReady(true);
       if (range) audio.currentTime = range.startTime;
     };
+    const onMeta = () => {
+      if (audio.duration && isFinite(audio.duration)) {
+        setAudioDuration(audio.duration);
+      }
+    };
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
     const onError = () => setAudioError(true);
 
     audio.addEventListener("timeupdate", onTime);
     audio.addEventListener("canplay", onCanPlay);
+    audio.addEventListener("loadedmetadata", onMeta);
     audio.addEventListener("play", onPlay);
     audio.addEventListener("pause", onPause);
     audio.addEventListener("error", onError);
@@ -121,6 +131,7 @@ export default function TranscriptPlayer({ audioUrl, segments, context }: Props)
     return () => {
       audio.removeEventListener("timeupdate", onTime);
       audio.removeEventListener("canplay", onCanPlay);
+      audio.removeEventListener("loadedmetadata", onMeta);
       audio.removeEventListener("play", onPlay);
       audio.removeEventListener("pause", onPause);
       audio.removeEventListener("error", onError);

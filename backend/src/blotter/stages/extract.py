@@ -14,6 +14,13 @@ AD_KEYWORDS = [
     "lumberjack special", "lumberjack", "riding hoodies",
     "cousin canceled", "beat me there", "we can share",
     "broadcastify", "scanner", "premium", "listeners",
+    "personal injury", "injury lawyer", "injury attorney",
+    "attorney", "lawyer", "law firm", "law office",
+    "building evidence", "client's pain", "settling low",
+    "free consultation", "call now", "visit us",
+    "cash back", "credit card", "loan", "mortgage",
+    "commercial free", "sponsor", "brought to you by",
+    "jesse crisp",
 ]
 
 AD_KEYWORD_RE = re.compile("|".join(re.escape(k) for k in AD_KEYWORDS), re.IGNORECASE)
@@ -47,7 +54,10 @@ def strip_ads(text: str) -> str:
         in_ad = False
         cleaned.append(sentence)
 
-    return " ".join(cleaned).strip()
+    result = " ".join(cleaned).strip()
+    if result and not DISPATCH_ANCHOR_RE.search(result):
+        return ""
+    return result
 
 
 def split_clauses(text: str) -> list[str]:
@@ -66,11 +76,26 @@ def _get_context(text: str, clause: str, window: int = 120) -> str:
     return prefix + text[start:end].strip() + suffix
 
 
+LOCATION_HINT_RE = re.compile(
+    r"\b(?:"
+    r"\d{1,5}\s+\w+\s+(?:street|st|avenue|ave|boulevard|blvd|drive|dr|road|rd|way|lane|ln|place|pl|court|ct)"
+    r"|(?:north|south|east|west)bound"
+    r"|\band\b.+\b(?:street|st|avenue|ave|boulevard|blvd|drive|dr|road|rd)\b"
+    r"|\bat\b.+\b(?:street|st|avenue|ave|boulevard|blvd|drive|dr|road|rd)\b"
+    r"|(?:block|hundred)\s+(?:of\s+)?\w+"
+    r"|\d+(?:th|st|nd|rd)\s+(?:and|&|at)\s+\w+"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
 def extract_clauses(text: str) -> list[ExtractedLocation]:
     cleaned = strip_ads(text)
     clauses = split_clauses(cleaned)
     locations = []
     for clause in clauses:
+        if not LOCATION_HINT_RE.search(clause):
+            continue
         locations.append(ExtractedLocation(
             raw_text=clause,
             normalized=clause,

@@ -6,7 +6,7 @@ from blotter.models import TranscriptSegment
 
 log = get_logger(__name__)
 
-DEFAULT_PROMPT_FILE = Path(__file__).resolve().parent.parent.parent.parent / "config" / "whisper_prompt.txt"
+PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "config" / "prompts"
 
 DEFAULT_PROMPT = (
     "Police radio dispatch. 10-4, copy, code 3, code 2, suspect vehicle, "
@@ -14,10 +14,14 @@ DEFAULT_PROMPT = (
 )
 
 
-def _load_prompt(config: TranscriptionConfig) -> str:
-    path = Path(config.prompt_file) if config.prompt_file else DEFAULT_PROMPT_FILE
-    if path.exists():
-        return path.read_text().strip()
+def _load_prompt_for_feed(feed_id: str | None) -> str:
+    if feed_id:
+        feed_file = PROMPTS_DIR / f"{feed_id}.txt"
+        if feed_file.exists():
+            return feed_file.read_text().strip()
+    default_file = PROMPTS_DIR / "default.txt"
+    if default_file.exists():
+        return default_file.read_text().strip()
     return DEFAULT_PROMPT
 
 
@@ -25,7 +29,7 @@ class Transcriber:
     def __init__(self, config: TranscriptionConfig) -> None:
         self.config = config
         self._model = None
-        self._prompt = _load_prompt(config)
+        self._prompt_cache: dict[str, str] = {}
 
     @property
     def model(self):
@@ -44,8 +48,16 @@ class Transcriber:
             )
         return self._model
 
-    def transcribe(self, audio_path: Path) -> tuple[list[TranscriptSegment], str]:
-        log.info("transcribing", path=str(audio_path))
+    def _get_prompt(self, feed_id: str | None) -> str:
+        key = feed_id or "__default__"
+        if key not in self._prompt_cache:
+            self._prompt_cache[key] = _load_prompt_for_feed(feed_id)
+            log.info("loaded prompt", feed_id=feed_id, chars=len(self._prompt_cache[key]))
+        return self._prompt_cache[key]
+
+    def transcribe(self, audio_path: Path, feed_id: str | None = None) -> tuple[list[TranscriptSegment], str]:
+        prompt = self._get_prompt(feed_id)
+        log.info("transcribing", path=str(audio_path), feed_id=feed_id)
 
         vad_params = {
             "min_silence_duration_ms": self.config.vad_min_silence_ms,
@@ -58,7 +70,9 @@ class Transcriber:
             language=self.config.language,
             vad_filter=self.config.vad_filter,
             vad_parameters=vad_params,
-            initial_prompt=self._prompt,
+            initial_prompt=prompt,
+            condition_on_previous_text=self.config.condition_on_previous_text,
+            no_speech_threshold=self.config.no_speech_threshold,
         )
 
         segments = []

@@ -55,14 +55,15 @@ def run_transcriber(
             continue
 
         try:
-            segments, full_text = transcriber.process_chunk(task)
+            segments, full_text, actual_duration_ms = transcriber.process_chunk(task)
             tags = extract_codes(full_text)
+            duration_ms = actual_duration_ms or task.duration_ms
 
             transcript = Transcript(
                 feed_id=task.feed_id,
                 feed_name=task.feed_name,
                 archive_ts=task.chunk_ts,
-                duration_ms=task.duration_ms,
+                duration_ms=duration_ms,
                 audio_url=task.audio_url,
                 segments=segments,
                 full_text=full_text,
@@ -74,7 +75,7 @@ def run_transcriber(
                 feed_id=task.feed_id,
                 feed_name=task.feed_name,
                 chunk_ts=task.chunk_ts,
-                duration_ms=task.duration_ms,
+                duration_ms=duration_ms,
                 audio_url=task.audio_url,
                 segments=segments,
                 full_text=full_text,
@@ -120,14 +121,23 @@ def run_processor(
                 entities = extract_clauses(task.full_text)
 
             events = []
+            batch_coords: list[tuple[float, float]] = []
             for e in entities:
                 result = geocoder.geocode(e)
                 if result is None:
                     continue
                 lat, lon, name = result
-                if has_recent_event(ch, name, minutes=10):
+                if has_recent_event(ch, name, lat, lon, minutes=10):
                     log.debug("skipping duplicate event", normalized=name)
                     continue
+                too_close = any(
+                    abs(lat - blat) < 0.002 and abs(lon - blon) < 0.002
+                    for blat, blon in batch_coords
+                )
+                if too_close:
+                    log.debug("skipping batch duplicate", normalized=name)
+                    continue
+                batch_coords.append((lat, lon))
                 events.append(GeocodedEvent(
                     feed_id=task.feed_id,
                     archive_ts=task.chunk_ts,
