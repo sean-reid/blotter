@@ -77,6 +77,7 @@ SKIP_NAMES = {
     "hollywood", "wilshire", "devonshire", "foothill", "topanga",
     "newton", "olympic", "mission", "van nuys",
     "west valley", "north hollywood", "west la",
+    "south valley", "north valley", "east valley",
     "77th street", "south bureau", "west bureau", "valley bureau",
     "central bureau",
     "division", "bureau", "station", "frequency",
