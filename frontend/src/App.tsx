@@ -56,13 +56,26 @@ export default function App() {
 
   const timeRangeRef = useRef(timeRange);
   timeRangeRef.current = timeRange;
+  const loadEventsRef = useRef(loadEvents);
+  loadEventsRef.current = loadEvents;
+  const loadTranscriptsRef = useRef(loadTranscripts);
+  loadTranscriptsRef.current = loadTranscripts;
+  const rawInputRef = useRef(rawInput);
+  rawInputRef.current = rawInput;
 
   useEffect(() => {
     const id = setInterval(() => {
       const r = timeRangeRef.current;
       const now = Math.floor(Date.now() / 1000);
       const duration = r.end - r.start;
-      setTimeRange({ start: now - duration, end: now });
+      const drift = now - r.end;
+      const minDrift = Math.max(60, Math.floor(duration * 0.01));
+      if (drift >= minDrift) {
+        setTimeRange({ start: now - duration, end: now });
+      } else {
+        loadEventsRef.current();
+        if (rawInputRef.current.trim()) loadTranscriptsRef.current();
+      }
     }, POLL_INTERVAL);
     return () => clearInterval(id);
   }, []);
