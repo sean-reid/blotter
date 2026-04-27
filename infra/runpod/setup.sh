@@ -78,8 +78,8 @@ cd "$REPO_DIR/backend"
 uv sync 2>/dev/null
 echo "[OK] Python packages"
 
-# Start pipeline
-nohup uv run blotter stream start &>/var/log/blotter-pipeline.log &
+# Start pipeline with auto-restart loop
+nohup bash -c 'export PATH="$HOME/.local/bin:$PATH" && export GOOGLE_APPLICATION_CREDENTIALS=/workspace/blotter-gcs-key.json && cd /workspace/blotter/backend && while true; do uv run blotter stream start 2>&1; echo "Pipeline exited, restarting in 10s..."; sleep 10; done' &>/var/log/blotter-pipeline.log &
 echo "[OK] Pipeline started"
 
 echo ""
