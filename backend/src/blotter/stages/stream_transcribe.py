@@ -51,10 +51,6 @@ class StreamTranscriber:
                 self._gcs.upload(audio_path, task.chunk_path)
                 duration_ms = self._get_duration_ms(audio_path)
 
-            if self._is_silent(audio_path):
-                log.info("skipping silent chunk", feed_id=task.feed_id, chunk_index=task.chunk_index)
-                return [], "", duration_ms
-
             segments, full_text = self._transcriber.transcribe(audio_path, feed_id=task.feed_id)
 
         full_text = strip_ads(full_text)
