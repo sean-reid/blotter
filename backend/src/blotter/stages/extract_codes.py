@@ -2,26 +2,35 @@ import re
 
 POLICE_CODES: dict[str, str] = {
     "code 1": "No lights/sirens",
-    "code 2": "Urgent response",
-    "code 3": "Emergency",
-    "code 4": "No further assistance",
+    "code 2": "Urgent, no sirens",
+    "code 3": "Lights & sirens",
+    "code 4": "No further assist",
     "code 5": "Stakeout",
     "code 6": "Out for investigation",
     "code 7": "Meal break",
     "code 37": "Stolen vehicle",
     "10-1": "Poor reception",
     "10-2": "Good reception",
+    "10-3": "Stop transmitting",
     "10-4": "Acknowledged",
+    "10-5": "Relay",
     "10-6": "Busy",
     "10-7": "Out of service",
     "10-8": "In service",
     "10-9": "Repeat",
     "10-10": "Off duty",
+    "10-14": "Escort",
     "10-15": "Prisoner in custody",
+    "10-19": "Return to station",
     "10-20": "Location",
     "10-22": "Disregard",
+    "10-23": "Stand by",
     "10-29": "Check for wants",
     "10-33": "Emergency traffic",
+    "10-35": "Confidential info",
+    "10-36": "Correct time",
+    "10-54": "Possible dead body",
+    "10-71": "Shooting",
     "10-77": "ETA",
     "10-97": "Arrived at scene",
     "10-98": "Available",
@@ -30,7 +39,7 @@ POLICE_CODES: dict[str, str] = {
     "207": "Kidnapping",
     "211": "Robbery",
     "242": "Battery",
-    "245": "Assault with deadly weapon",
+    "245": "Assault w/ deadly weapon",
     "261": "Rape",
     "288": "Lewd conduct",
     "311": "Indecent exposure",
@@ -74,7 +83,7 @@ def extract_codes(text: str) -> list[str]:
             code = f"code {m.group(1)}"
         else:
             code = m.group(2)
-        if code:
+        if code and code.lower() in POLICE_CODES:
             found[code.lower()] = None
 
     for m in _PENAL_PATTERN.finditer(text):

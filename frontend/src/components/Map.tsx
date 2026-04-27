@@ -10,6 +10,10 @@ import MapGL, {
 import type { ScannerEvent } from "../lib/types";
 
 const LA_CENTER = { longitude: -118.35, latitude: 34.05 };
+const LA_BOUNDS: [[number, number], [number, number]] = [
+  [-118.67, 33.7],
+  [-118.15, 34.35],
+];
 
 interface Props {
   events: ScannerEvent[];
@@ -40,7 +44,11 @@ export default function Map({ events, onEventClick }: Props) {
 
   const fitAll = useCallback(() => {
     const map = mapRef.current;
-    if (!map || events.length === 0) return;
+    if (!map) return;
+    if (events.length === 0) {
+      map.fitBounds(LA_BOUNDS, { padding: 40 });
+      return;
+    }
     const bounds = new LngLatBounds();
     for (const e of events) {
       bounds.extend([e.longitude, e.latitude]);
@@ -78,11 +86,10 @@ export default function Map({ events, onEventClick }: Props) {
     >
       <NavigationControl position="bottom-right" showCompass={false} />
 
-      {events.length > 0 && (
-        <div className="maplibregl-ctrl maplibregl-ctrl-group absolute right-[10px] bottom-[50px] z-10">
+      <div className="maplibregl-ctrl maplibregl-ctrl-group absolute right-[10px] bottom-[50px] z-10">
           <button
             onClick={fitAll}
-            title="Fit all events"
+            title={events.length > 0 ? "Fit all events" : "Show LA County"}
             type="button"
             className="maplibregl-ctrl-icon"
             style={{
@@ -98,9 +105,7 @@ export default function Map({ events, onEventClick }: Props) {
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4" />
             </svg>
           </button>
-        </div>
-      )}
-
+      </div>
 
       <Source
         id="events"
