@@ -1,3 +1,5 @@
+import re
+from dataclasses import dataclass
 from functools import lru_cache
 
 import httpx
@@ -11,35 +13,84 @@ log = get_logger(__name__)
 
 ROAD_TYPES = {"route", "intersection", "street_address"}
 
-DIVISION_BIAS: dict[str, tuple[str, str]] = {
-    "south bureau": (
-        "rectangle:33.72,-118.36|34.02,-118.19",
-        "South Los Angeles, CA",
+_STREET_SUFFIXES = {
+    "street", "st", "avenue", "ave", "boulevard", "blvd",
+    "drive", "dr", "road", "rd", "way", "lane", "ln",
+    "place", "pl", "court", "ct",
+}
+_SUFFIX_RE = re.compile(
+    r"\b(" + "|".join(re.escape(s) for s in sorted(_STREET_SUFFIXES, key=len, reverse=True)) + r")\.?$",
+    re.IGNORECASE,
+)
+
+
+def _base_street_name(name: str) -> str:
+    return _SUFFIX_RE.sub("", name).strip().rstrip(".")
+
+
+def _prefer_original_name(original: str, geocoded: str) -> str:
+    orig_base = _base_street_name(original).lower()
+    geo_base = _base_street_name(geocoded).lower()
+    if orig_base and orig_base == geo_base and _SUFFIX_RE.search(original):
+        return original
+    return geocoded
+
+
+@dataclass(frozen=True)
+class DivisionGeo:
+    suffix: str
+    bias_south: float
+    bias_west: float
+    bias_north: float
+    bias_east: float
+    bound_south: float
+    bound_west: float
+    bound_north: float
+    bound_east: float
+
+    @property
+    def places_bias(self) -> str:
+        return f"rectangle:{self.bias_south},{self.bias_west}|{self.bias_north},{self.bias_east}"
+
+    def contains(self, lat: float, lon: float) -> bool:
+        return (self.bound_south <= lat <= self.bound_north
+                and self.bound_west <= lon <= self.bound_east)
+
+
+DIVISIONS: dict[str, DivisionGeo] = {
+    "south bureau": DivisionGeo(
+        suffix="South Los Angeles, CA",
+        bias_south=33.72, bias_west=-118.36, bias_north=34.02, bias_east=-118.19,
+        bound_south=33.62, bound_west=-118.46, bound_north=34.12, bound_east=-118.09,
     ),
-    "west bureau": (
-        "rectangle:33.93,-118.52|34.13,-118.27",
-        "West Los Angeles, CA",
+    "west bureau": DivisionGeo(
+        suffix="West Los Angeles, CA",
+        bias_south=33.93, bias_west=-118.52, bias_north=34.13, bias_east=-118.27,
+        bound_south=33.83, bound_west=-118.62, bound_north=34.23, bound_east=-118.17,
     ),
-    "valley bureau": (
-        "rectangle:34.12,-118.67|34.35,-118.35",
-        "San Fernando Valley, CA",
+    "valley bureau": DivisionGeo(
+        suffix="San Fernando Valley, CA",
+        bias_south=34.12, bias_west=-118.67, bias_north=34.35, bias_east=-118.35,
+        bound_south=34.02, bound_west=-118.77, bound_north=34.45, bound_east=-118.25,
     ),
-    "central bureau": (
-        "rectangle:33.98,-118.30|34.10,-118.19",
-        "Downtown Los Angeles, CA",
+    "central bureau": DivisionGeo(
+        suffix="Downtown Los Angeles, CA",
+        bias_south=33.98, bias_west=-118.30, bias_north=34.10, bias_east=-118.19,
+        bound_south=33.88, bound_west=-118.40, bound_north=34.20, bound_east=-118.09,
     ),
-    "long beach": (
-        "rectangle:33.72,-118.25|33.88,-118.06",
-        "Long Beach, CA",
+    "long beach": DivisionGeo(
+        suffix="Long Beach, CA",
+        bias_south=33.72, bias_west=-118.25, bias_north=33.88, bias_east=-118.06,
+        bound_south=33.62, bound_west=-118.35, bound_north=33.98, bound_east=-117.96,
     ),
 }
 
 
-def _get_feed_bias(feed_name: str) -> tuple[str, str] | None:
+def _match_division(feed_name: str) -> DivisionGeo | None:
     lower = feed_name.lower()
-    for key, bias in DIVISION_BIAS.items():
+    for key, div in DIVISIONS.items():
         if key in lower:
-            return bias
+            return div
     return None
 
 
@@ -103,7 +154,11 @@ class Geocoder:
             types=c.get("types", []),
         )
 
-    def _resolve(self, query: str, label: str, bias: str | None = None) -> tuple[float, float, str] | None:
+    def _resolve(
+        self, query: str, label: str,
+        division: DivisionGeo | None = None,
+    ) -> tuple[float, float, str] | None:
+        bias = division.places_bias if division else None
         result = self._places_lookup(query, bias)
         if result is None:
             return None
@@ -113,28 +168,33 @@ class Geocoder:
         if not self._in_bounds(result.lat, result.lon):
             log.debug("outside bounds", clause=label[:60], lat=result.lat, lon=result.lon)
             return None
+        if division and not division.contains(result.lat, result.lon):
+            log.info("outside division", clause=label[:60], name=result.name,
+                     lat=result.lat, lon=result.lon)
+            return None
         log.info("resolved", clause=label[:60], name=result.name, lat=result.lat, lon=result.lon)
         return (result.lat, result.lon, result.name)
 
     def geocode(self, location: ExtractedLocation, feed_name: str = "") -> tuple[float, float, str] | None:
         clause = location.normalized
-        suffix = self.region.location_suffix
-        bias: str | None = None
-
-        feed_bias = _get_feed_bias(feed_name) if feed_name else None
-        if feed_bias:
-            bias, suffix = feed_bias
+        division = _match_division(feed_name) if feed_name else None
+        suffix = division.suffix if division else self.region.location_suffix
 
         if location.source == "nlp_intersection" and " and " in clause:
             parts = clause.split(" and ", 1)
             queries = [
                 f"intersection of {parts[0]} and {parts[1]}, {suffix}",
                 f"{parts[0]} & {parts[1]}, {suffix}",
+                f"intersection of {parts[1]} and {parts[0]}, {suffix}",
             ]
             for q in queries:
-                result = self._resolve(q, clause, bias)
+                result = self._resolve(q, clause, division)
                 if result:
                     return result
             return None
 
-        return self._resolve(f"{clause}, {suffix}", clause, bias)
+        result = self._resolve(f"{clause}, {suffix}", clause, division)
+        if result:
+            lat, lon, name = result
+            return (lat, lon, _prefer_original_name(clause, name))
+        return None

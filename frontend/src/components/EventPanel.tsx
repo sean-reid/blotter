@@ -134,18 +134,10 @@ export default function EventPanel({ event, onClose }: Props) {
             </div>
           )}
 
-          <div className="flex gap-6">
-            <div className="flex-1">
-              <FieldLabel>Time</FieldLabel>
-              <div className="text-sm text-[#adbac7] tabular-nums">
-                {formatDate(event.event_ts)}
-              </div>
-            </div>
-            <div>
-              <FieldLabel>Confidence</FieldLabel>
-              <span className="text-sm tabular-nums text-[#adbac7]">
-                {Math.round(event.confidence * 100)}%
-              </span>
+          <div>
+            <FieldLabel>Time</FieldLabel>
+            <div className="text-sm text-[#adbac7] tabular-nums">
+              {formatDate(event.event_ts)}
             </div>
           </div>
 

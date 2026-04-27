@@ -141,7 +141,7 @@ def run_processor(
                     log.debug("skipping duplicate event", normalized=name)
                     continue
                 too_close = any(
-                    abs(lat - blat) < 0.002 and abs(lon - blon) < 0.002
+                    abs(lat - blat) < 0.005 and abs(lon - blon) < 0.005
                     for blat, blon in batch_coords
                 )
                 if too_close:

@@ -124,21 +124,11 @@ export default function TranscriptPanel({ transcript, onClose, onEventFound }: P
             </div>
           )}
 
-          <div className="flex gap-6">
-            <div className="flex-1">
-              <FieldLabel>Time</FieldLabel>
-              <div className="text-sm text-[#adbac7] tabular-nums">
-                {formatDate(event?.event_ts ?? transcript.archive_ts)}
-              </div>
+          <div>
+            <FieldLabel>Time</FieldLabel>
+            <div className="text-sm text-[#adbac7] tabular-nums">
+              {formatDate(event?.event_ts ?? transcript.archive_ts)}
             </div>
-            {event && (
-              <div>
-                <FieldLabel>Confidence</FieldLabel>
-                <span className="text-sm tabular-nums text-[#adbac7]">
-                  {Math.round(event.confidence * 100)}%
-                </span>
-              </div>
-            )}
           </div>
 
           <div>

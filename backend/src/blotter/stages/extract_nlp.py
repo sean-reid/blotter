@@ -37,25 +37,62 @@ DISPATCH_REF_RE = re.compile(
     re.IGNORECASE,
 )
 
+_SUSPECT_STARTS = (
+    "male", "female", "black", "white", "hispanic", "asian",
+    "wearing", "approximately", "about", "described", "last seen",
+    "fled", "running", "driving", "in custody", "armed", "unarmed",
+    "thin", "heavy", "medium", "tall", "short", "unknown", "a ",
+)
+_suspect_alt = "|".join(re.escape(s) for s in _SUSPECT_STARTS)
+SUSPECT_DESC_RE = re.compile(
+    rf"\bsuspect\s+(?:is\s+)?(?:{_suspect_alt})[\w\s,''-]{{0,120}}"
+    rf"(?=[.]|\b(?:code|incident|unit|respond|copy|roger)\b|$)"
+    rf"|\b(?:male|female)\s+(?:black|white|hispanic|asian)\s*,?\s*\d{{1,2}}\s+years[\w\s,''-]{{0,80}}",
+    re.IGNORECASE,
+)
+
+# Standalone words that NLP extracts as entities but are never dispatch locations.
 SKIP_NAMES = {
-    "location", "area", "block", "scene", "route", "unit", "dispatch",
+    # dispatch roles / people
     "suspect", "victim", "male", "female", "supervisor", "officer",
-    "ambulance", "backup", "custody", "place", "number one",
-    "south", "north", "east", "west", "people", "president",
-    "minorities", "corner", "letter location", "island", "street",
-    "stop", "roger", "roger that",
+    "informant", "complainant", "witness", "caller", "reporting party",
+    "p.o.", "po", "pr", "rp",
+
+    # generic place words
+    "location", "area", "block", "scene", "route", "place",
+    "corner", "island", "campus",
+
+    # standalone street type words (NLP sometimes returns just "Avenue")
+    "street", "avenue", "boulevard", "road", "drive", "way",
+    "lane", "place", "court", "alley",
+    "freeway", "highway", "interstate",
+    "onramp", "offramp", "off-ramp", "on-ramp",
+
+    # cardinal directions
+    "south", "north", "east", "west",
     "southwest", "southeast", "northeast", "northwest",
+
+    # LAPD divisions / bureaus (not street addresses)
     "central", "pacific", "rampart", "hollenbeck", "harbor",
     "hollywood", "wilshire", "devonshire", "foothill", "topanga",
     "newton", "olympic", "mission", "van nuys",
-    "west valley", "north hollywood", "west la", "northeast",
+    "west valley", "north hollywood", "west la",
     "77th street", "south bureau", "west bureau", "valley bureau",
     "division", "bureau", "station", "frequency",
+
+    # LAPD phonetic alphabet (standalone)
     "charles", "adam", "lincoln", "mary", "boy", "king", "tom",
+
+    # dispatch vocabulary
+    "unit", "dispatch", "ambulance", "backup", "custody",
+    "stop", "roger", "roger that", "number one",
     "front desk", "front", "desk", "system", "radio", "channel",
-    "cash back", "insurance", "commercial", "campus",
+    "team", "team family", "family",
+
+    # common NLP false positives
+    "people", "president", "minorities",
+    "cash back", "insurance", "commercial",
     "wood", "james", "beach", "garden", "park", "hill",
-    "freeway", "highway", "interstate", "onramp", "offramp", "off-ramp", "on-ramp",
 }
 
 STREET_SUFFIX_RE = re.compile(
@@ -161,9 +198,12 @@ def _find_intersections(text: str, entities: list[dict]) -> list[tuple[str, int]
         if gap_end - gap_start > 15:
             continue
         between = text[gap_start:gap_end]
-        if JUNCTION_RE.search(between):
-            combined = f"{name_a} and {name_b}"
-            intersections.append((combined, off_a))
+        if not JUNCTION_RE.search(between):
+            continue
+        if not _is_plausible_location(name_a) or not _is_plausible_location(name_b):
+            continue
+        combined = f"{name_a} and {name_b}"
+        intersections.append((combined, off_a))
 
     return intersections
 
@@ -192,6 +232,7 @@ def extract_entities(text: str, config: GoogleNLPConfig) -> list[ExtractedLocati
 
     cleaned = UNIT_CALLSIGN_RE.sub("", cleaned)
     cleaned = DISPATCH_REF_RE.sub("", cleaned)
+    cleaned = SUSPECT_DESC_RE.sub("", cleaned)
 
     try:
         entities = _call_nlp(cleaned, config.api_key)
