@@ -74,12 +74,12 @@ export default function Map({ events, selectedEvent, onEventClick }: Props) {
       );
     };
 
-    map.on("zoomend", check);
-    map.on("moveend", check);
+    map.on("zoom", check);
+    map.on("move", check);
     const timer = setTimeout(check, 150);
     return () => {
-      map.off("zoomend", check);
-      map.off("moveend", check);
+      map.off("zoom", check);
+      map.off("move", check);
       clearTimeout(timer);
     };
   }, [selectedEvent]);
