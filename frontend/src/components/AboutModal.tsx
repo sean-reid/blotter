@@ -84,20 +84,22 @@ export default function AboutModal({ open, onClose }: Props) {
               How it works
             </h3>
             <p>
-              Audio archives are pulled from Broadcastify and run through
-              speech-to-text. An NLP pipeline extracts location references from
-              the transcriptions, which are then geocoded and placed on the map.
-              All transcripts are indexed for full-text search.
+              Live audio streams from Broadcastify are captured and transcribed
+              using Faster Whisper on GPU. Google Cloud NLP extracts location
+              references, which are geocoded via Google Places and plotted on the
+              map. All transcripts and audio are searchable and playable.
             </p>
           </div>
 
           <div>
             <h3 className="text-[11px] font-medium uppercase tracking-wider text-[#545d68] mb-1.5">
-              Data sources
+              Stack
             </h3>
             <ul className="space-y-0.5 text-[#768390]">
-              <li>Broadcastify public safety feeds</li>
-              <li>OpenStreetMap / Nominatim for geocoding</li>
+              <li>Broadcastify live streams</li>
+              <li>Faster Whisper (large-v3) on RunPod GPU</li>
+              <li>Google Cloud NLP + Places API</li>
+              <li>ClickHouse + Cloudflare Pages</li>
             </ul>
           </div>
 

@@ -49,5 +49,6 @@ infra/clickhouse/data/
 # Nominatim local data
 infra/nominatim/data/
 
-# Cloudflare tunnel credentials
+# Cloudflare
 infra/cloudflared/credentials.json
+.wrangler/

@@ -24,54 +24,89 @@ function findContextRange(
   const contextLower = context.replace(/^\.{3}/, "").replace(/\.{3}$/, "").toLowerCase().trim();
   if (!contextLower) return null;
 
-  const contextWords = contextLower.split(/\s+/).filter(Boolean);
-  if (contextWords.length < 3) return null;
-
-  const firstFew = contextWords.slice(0, 5).join(" ");
-  const lastFew = contextWords.slice(-5).join(" ");
-
-  let bestStart = -1;
-  let bestEnd = -1;
-
+  const segOffsets: { idx: number; charStart: number; charEnd: number }[] = [];
+  let fullText = "";
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
     if (!seg) continue;
-    const segLower = seg.text.toLowerCase();
-    if (bestStart === -1 && segLower.includes(firstFew.slice(0, 30))) {
-      bestStart = i;
-    }
-    if (segLower.includes(lastFew.slice(-30))) {
-      bestEnd = i;
-    }
+    const start = fullText.length;
+    fullText += (fullText ? " " : "") + seg.text.toLowerCase();
+    segOffsets.push({ idx: i, charStart: start, charEnd: fullText.length });
   }
 
-  if (bestStart === -1) {
-    let maxOverlap = 0;
-    for (let i = 0; i < segments.length; i++) {
-      const seg = segments[i];
-      if (!seg) continue;
-      const segWords = new Set(seg.text.toLowerCase().split(/\s+/));
-      const overlap = contextWords.filter((w) => segWords.has(w)).length;
-      if (overlap > maxOverlap) {
-        maxOverlap = overlap;
-        bestStart = i;
+  const contextWords = contextLower.split(/\s+/).filter(Boolean);
+  let matchStart = -1;
+  let matchEnd = -1;
+
+  const searchStr = contextWords.join(" ");
+  const pos = fullText.indexOf(searchStr);
+  if (pos !== -1) {
+    matchStart = pos;
+    matchEnd = pos + searchStr.length;
+  } else {
+    const half = Math.floor(contextWords.length / 2);
+    for (let len = contextWords.length; len >= Math.min(4, contextWords.length); len--) {
+      const sub = contextWords.slice(0, len).join(" ");
+      const p = fullText.indexOf(sub);
+      if (p !== -1) {
+        matchStart = p;
+        matchEnd = p + sub.length;
+        break;
+      }
+    }
+    if (matchStart === -1) {
+      for (let len = half; len >= Math.min(4, contextWords.length); len--) {
+        const sub = contextWords.slice(-len).join(" ");
+        const p = fullText.indexOf(sub);
+        if (p !== -1) {
+          matchStart = p;
+          matchEnd = p + sub.length;
+          break;
+        }
       }
     }
   }
 
-  if (bestStart === -1) return null;
-  if (bestEnd === -1 || bestEnd < bestStart) bestEnd = bestStart;
+  if (matchStart === -1) {
+    let best = -1;
+    let bestScore = 0;
+    const ctxSet = new Set(contextWords);
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      if (!seg) continue;
+      const words = seg.text.toLowerCase().split(/\s+/);
+      const score = words.filter((w) => ctxSet.has(w)).length;
+      if (score > bestScore) {
+        bestScore = score;
+        best = i;
+      }
+    }
+    if (best === -1 || bestScore < 2) return null;
+    const padStart = Math.max(0, best - 2);
+    const padEnd = Math.min(segments.length - 1, best + 2);
+    return {
+      startTime: Math.max(0, segments[padStart]!.start - CONTEXT_PAD),
+      endTime: segments[padEnd]!.end + CONTEXT_PAD,
+      startIdx: padStart,
+      endIdx: padEnd,
+    };
+  }
 
-  const padStart = Math.max(0, bestStart - 1);
-  const padEnd = Math.min(segments.length - 1, bestEnd + 1);
+  let startIdx = 0;
+  let endIdx = segments.length - 1;
+  for (const so of segOffsets) {
+    if (so.charEnd > matchStart) { startIdx = so.idx; break; }
+  }
+  for (let i = segOffsets.length - 1; i >= 0; i--) {
+    if (segOffsets[i]!.charStart < matchEnd) { endIdx = segOffsets[i]!.idx; break; }
+  }
 
-  const startSeg = segments[padStart];
-  const endSeg = segments[padEnd];
-  if (!startSeg || !endSeg) return null;
+  const padStart = Math.max(0, startIdx - 1);
+  const padEnd = Math.min(segments.length - 1, endIdx + 1);
 
   return {
-    startTime: Math.max(0, startSeg.start - CONTEXT_PAD),
-    endTime: endSeg.end + CONTEXT_PAD,
+    startTime: Math.max(0, segments[padStart]!.start - CONTEXT_PAD),
+    endTime: segments[padEnd]!.end + CONTEXT_PAD,
     startIdx: padStart,
     endIdx: padEnd,
   };

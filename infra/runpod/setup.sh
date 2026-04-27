@@ -65,9 +65,9 @@ echo "[OK] Repo"
 clickhouse-client --multiquery < "$REPO_DIR/infra/clickhouse/init.sql" 2>/dev/null
 echo "[OK] Schema"
 
-# Start cloudflared tunnel
+# Start cloudflared tunnel with auto-restart loop
 if [ -f "$REPO_DIR/infra/cloudflared/credentials.json" ]; then
-  nohup cloudflared tunnel --config "$REPO_DIR/infra/cloudflared/config.yml" run &>/var/log/cloudflared.log &
+  nohup bash -c 'while true; do cloudflared tunnel --config '"$REPO_DIR"'/infra/cloudflared/config.yml run 2>&1; echo "cloudflared exited, restarting in 5s..."; sleep 5; done' &>/var/log/cloudflared.log &
   echo "[OK] Tunnel"
 else
   echo "[WARN] No tunnel credentials — copy credentials.json to infra/cloudflared/"
