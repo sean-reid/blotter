@@ -24,8 +24,27 @@ _SUFFIX_RE = re.compile(
 )
 
 
+_DIRECTION_RE = re.compile(r"^(?:north|south|east|west|n|s|e|w)\.?\s+", re.IGNORECASE)
+_NOISE_WORDS = {"the", "of", "and", "at", "in", "on", "to", "a", "an", "intersection"}
+
+
 def _base_street_name(name: str) -> str:
     return _SUFFIX_RE.sub("", name).strip().rstrip(".")
+
+
+def _significant_words(name: str) -> set[str]:
+    name = _DIRECTION_RE.sub("", name)
+    name = _SUFFIX_RE.sub("", name).strip()
+    words = {w.lower().rstrip(".") for w in name.split()}
+    return words - _NOISE_WORDS - _STREET_SUFFIXES
+
+
+def _name_relevant(query: str, result_name: str) -> bool:
+    q_words = _significant_words(query)
+    r_words = _significant_words(result_name)
+    if not q_words or not r_words:
+        return True
+    return bool(q_words & r_words)
 
 
 def _prefer_original_name(original: str, geocoded: str) -> str:
@@ -164,6 +183,9 @@ class Geocoder:
             return None
         if not result.is_road:
             log.debug("not a road", clause=label[:60], name=result.name, types=result.types[:3])
+            return None
+        if not _name_relevant(label, result.name):
+            log.info("name mismatch", query=label[:60], result=result.name)
             return None
         if not self._in_bounds(result.lat, result.lon):
             log.debug("outside bounds", clause=label[:60], lat=result.lat, lon=result.lon)
