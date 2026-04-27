@@ -197,6 +197,8 @@ class StreamCaptureWorker:
                 seen.add(f.name)
                 try:
                     self._process_chunk(f)
+                except FileNotFoundError:
+                    log.debug("chunk already removed", feed_id=self.feed_id, file=f.name)
                 except Exception:
                     log.error("chunk processing failed", feed_id=self.feed_id, file=f.name, exc_info=True)
 

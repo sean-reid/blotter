@@ -62,6 +62,21 @@ export default function SearchBox({
     return () => clearInterval(id);
   }, [query, focused]);
 
+  useEffect(() => {
+    if (!query) return;
+    const { timeRange: parsed } = parseTimeFilter(query);
+    if (!parsed) return;
+    const id = setInterval(() => {
+      const { cleanQuery, timeRange: fresh } = parseTimeFilter(query);
+      if (fresh) {
+        onTimeRangeChange(fresh);
+        setActiveRange(fresh);
+        onSearch(cleanQuery.trim());
+      }
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [query, onTimeRangeChange, onSearch]);
+
   const handleChange = useCallback((value: string) => {
     setQuery(value);
     onInputChange?.(value);
