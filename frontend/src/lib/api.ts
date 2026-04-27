@@ -59,11 +59,7 @@ export async function fetchEvents(
       ` AND (e.context ILIKE {search:String}` +
       ` OR e.normalized ILIKE {search:String}` +
       ` OR e.raw_location ILIKE {search:String}` +
-      ` OR e.tags ILIKE {search:String}` +
-      ` OR EXISTS (SELECT 1 FROM blotter.scanner_transcripts t` +
-      ` WHERE t.feed_id = e.feed_id` +
-      ` AND abs(toInt64(t.archive_ts) - toInt64(toDateTime64(e.archive_ts, 3))) < 120` +
-      ` AND (t.transcript ILIKE {search:String} OR t.tags ILIKE {search:String})))`;
+      ` OR e.tags ILIKE {search:String})`;
   }
 
   sql += ` ORDER BY e.event_ts DESC LIMIT 5000`;
