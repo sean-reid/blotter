@@ -101,6 +101,7 @@ export default function App() {
             <TranscriptList
               results={transcriptResults}
               query={searchQuery}
+              events={events}
               onSelect={handleTranscriptSelect}
             />
           )}

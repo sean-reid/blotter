@@ -84,9 +84,9 @@ export default function Map({ events, onEventClick }: Props) {
       pitchWithRotate={false}
       cursor="default"
     >
-      <NavigationControl position="bottom-right" showCompass={false} />
+      <NavigationControl position="bottom-left" showCompass={false} />
 
-      <div className="maplibregl-ctrl maplibregl-ctrl-group absolute right-[10px] bottom-[125px] z-10">
+      <div className="maplibregl-ctrl maplibregl-ctrl-group absolute left-[10px] bottom-[125px] z-10">
           <button
             onClick={fitAll}
             title={events.length > 0 ? "Fit all events" : "Show LA County"}
