@@ -6,6 +6,7 @@ interface Props {
   query: string;
   events: ScannerEvent[];
   selectedTranscript: TranscriptResult | null;
+  selectedEvent: ScannerEvent | null;
   onSelect: (result: TranscriptResult) => void;
 }
 
@@ -49,7 +50,21 @@ function snippet(text: string, query: string, maxLen = 120): string {
   return s;
 }
 
-export default function TranscriptList({ results, query, events, selectedTranscript, onSelect }: Props) {
+function transcriptMatchesEvent(t: TranscriptResult, e: ScannerEvent | null): boolean {
+  if (!e) return false;
+  if (e.feed_id !== t.feed_id) return false;
+  const tTs = new Date(
+    t.archive_ts.includes("Z") || t.archive_ts.includes("+")
+      ? t.archive_ts : t.archive_ts.replace(" ", "T") + "Z"
+  ).getTime() / 1000;
+  const eTs = new Date(
+    e.archive_ts.includes("Z") || e.archive_ts.includes("+")
+      ? e.archive_ts : e.archive_ts.replace(" ", "T") + "Z"
+  ).getTime() / 1000;
+  return Math.abs(eTs - tTs) < 120;
+}
+
+export default function TranscriptList({ results, query, events, selectedTranscript, selectedEvent, onSelect }: Props) {
   if (!results.length) return null;
 
   return (
@@ -65,9 +80,10 @@ export default function TranscriptList({ results, query, events, selectedTranscr
       <div className="overflow-y-auto" style={{ maxHeight: "calc(50vh - 32px)" }}>
         {results.map((r, i) => {
           const event = hasMatchingEvent(r, events);
-          const isSelected = selectedTranscript
+          const isSelected = (selectedTranscript
             && r.feed_id === selectedTranscript.feed_id
-            && r.archive_ts === selectedTranscript.archive_ts;
+            && r.archive_ts === selectedTranscript.archive_ts)
+            || transcriptMatchesEvent(r, selectedEvent);
           return (
           <button
             key={`${r.feed_id}-${r.archive_ts}-${i}`}

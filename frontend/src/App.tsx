@@ -92,6 +92,10 @@ export default function App() {
     setSelectedEvent(findEventForTranscript(result));
   }, [findEventForTranscript]);
 
+  const handleEventFound = useCallback((event: ScannerEvent) => {
+    setSelectedEvent(event);
+  }, []);
+
   const handleClosePanel = useCallback(() => {
     setSelectedEvent(null);
     setSelectedTranscript(null);
@@ -119,6 +123,7 @@ export default function App() {
               query={searchQuery}
               events={events}
               selectedTranscript={selectedTranscript}
+              selectedEvent={selectedEvent}
               onSelect={handleTranscriptSelect}
             />
           )}
@@ -136,6 +141,7 @@ export default function App() {
         <TranscriptPanel
           transcript={selectedTranscript}
           onClose={handleClosePanel}
+          onEventFound={handleEventFound}
         />
       )}
 

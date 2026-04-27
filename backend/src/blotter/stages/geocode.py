@@ -11,6 +11,37 @@ log = get_logger(__name__)
 
 ROAD_TYPES = {"route", "intersection", "street_address"}
 
+DIVISION_BIAS: dict[str, tuple[str, str]] = {
+    "south bureau": (
+        "rectangle:33.72,-118.36|34.02,-118.19",
+        "South Los Angeles, CA",
+    ),
+    "west bureau": (
+        "rectangle:33.93,-118.52|34.13,-118.27",
+        "West Los Angeles, CA",
+    ),
+    "valley bureau": (
+        "rectangle:34.12,-118.67|34.35,-118.35",
+        "San Fernando Valley, CA",
+    ),
+    "central bureau": (
+        "rectangle:33.98,-118.30|34.10,-118.19",
+        "Downtown Los Angeles, CA",
+    ),
+    "long beach": (
+        "rectangle:33.72,-118.25|33.88,-118.06",
+        "Long Beach, CA",
+    ),
+}
+
+
+def _get_feed_bias(feed_name: str) -> tuple[str, str] | None:
+    lower = feed_name.lower()
+    for key, bias in DIVISION_BIAS.items():
+        if key in lower:
+            return bias
+    return None
+
 
 class PlaceResult:
     __slots__ = ("name", "lat", "lon", "types")
@@ -40,7 +71,7 @@ class Geocoder:
         return self._bbox.contains(Point(lon, lat))
 
     @lru_cache(maxsize=4096)
-    def _places_lookup(self, query: str) -> PlaceResult | None:
+    def _places_lookup(self, query: str, bias: str | None = None) -> PlaceResult | None:
         try:
             resp = httpx.get(
                 "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
@@ -48,7 +79,7 @@ class Geocoder:
                     "input": query,
                     "inputtype": "textquery",
                     "fields": "geometry,name,types",
-                    "locationbias": self.region.places_bias,
+                    "locationbias": bias or self.region.places_bias,
                     "key": self.api_key,
                 },
                 timeout=10,
@@ -72,8 +103,8 @@ class Geocoder:
             types=c.get("types", []),
         )
 
-    def _resolve(self, query: str, label: str) -> tuple[float, float, str] | None:
-        result = self._places_lookup(query)
+    def _resolve(self, query: str, label: str, bias: str | None = None) -> tuple[float, float, str] | None:
+        result = self._places_lookup(query, bias)
         if result is None:
             return None
         if not result.is_road:
@@ -85,9 +116,14 @@ class Geocoder:
         log.info("resolved", clause=label[:60], name=result.name, lat=result.lat, lon=result.lon)
         return (result.lat, result.lon, result.name)
 
-    def geocode(self, location: ExtractedLocation) -> tuple[float, float, str] | None:
+    def geocode(self, location: ExtractedLocation, feed_name: str = "") -> tuple[float, float, str] | None:
         clause = location.normalized
         suffix = self.region.location_suffix
+        bias: str | None = None
+
+        feed_bias = _get_feed_bias(feed_name) if feed_name else None
+        if feed_bias:
+            bias, suffix = feed_bias
 
         if location.source == "nlp_intersection" and " and " in clause:
             parts = clause.split(" and ", 1)
@@ -96,9 +132,9 @@ class Geocoder:
                 f"{parts[0]} & {parts[1]}, {suffix}",
             ]
             for q in queries:
-                result = self._resolve(q, clause)
+                result = self._resolve(q, clause, bias)
                 if result:
                     return result
             return None
 
-        return self._resolve(f"{clause}, {suffix}", clause)
+        return self._resolve(f"{clause}, {suffix}", clause, bias)

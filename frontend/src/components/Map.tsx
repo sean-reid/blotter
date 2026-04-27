@@ -1,6 +1,6 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import { LngLatBounds } from "maplibre-gl";
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import MapGL, {
   Layer,
   type MapRef,
@@ -68,6 +68,17 @@ export default function Map({ events, selectedEvent, onEventClick }: Props) {
     }
     map.fitBounds(bounds, { padding: 60, maxZoom: 14 });
   }, [events]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !selectedEvent) return;
+    const zoom = map.getZoom();
+    if (zoom < 13) {
+      map.flyTo({ center: [selectedEvent.longitude, selectedEvent.latitude], zoom: 14, duration: 800 });
+    } else {
+      map.flyTo({ center: [selectedEvent.longitude, selectedEvent.latitude], duration: 800 });
+    }
+  }, [selectedEvent]);
 
   const handleClick = useCallback(
     (e: maplibregl.MapLayerMouseEvent) => {

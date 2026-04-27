@@ -7,6 +7,7 @@ import TranscriptPlayer from "./TranscriptPlayer";
 interface Props {
   transcript: TranscriptResult;
   onClose: () => void;
+  onEventFound?: (event: ScannerEvent) => void;
 }
 
 function formatDate(ts: string): string {
@@ -37,16 +38,19 @@ function parseSegments(raw: string): TranscriptSegment[] {
   }
 }
 
-export default function TranscriptPanel({ transcript, onClose }: Props) {
+export default function TranscriptPanel({ transcript, onClose, onEventFound }: Props) {
   const [visible] = useState(true);
   const [event, setEvent] = useState<ScannerEvent | null>(null);
 
   useEffect(() => {
     setEvent(null);
     fetchEventForTranscript(transcript.feed_id, transcript.archive_ts)
-      .then(setEvent)
+      .then((e) => {
+        setEvent(e);
+        if (e && onEventFound) onEventFound(e);
+      })
       .catch(() => setEvent(null));
-  }, [transcript.feed_id, transcript.archive_ts]);
+  }, [transcript.feed_id, transcript.archive_ts, onEventFound]);
 
   const tags = transcript.tags || event?.tags;
 

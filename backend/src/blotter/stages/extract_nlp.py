@@ -29,6 +29,14 @@ UNIT_CALLSIGN_RE = re.compile(
     re.IGNORECASE,
 )
 
+DISPATCH_REF_RE = re.compile(
+    r"\bincident\s+[\w-]+"
+    r"|\bcode\s+\d[\d-]+"
+    r"|\bRD-?\d{3,}\b"
+    r"|\b\d{3,}-[A-Z]{1,4}-[\w-]+\b",
+    re.IGNORECASE,
+)
+
 SKIP_NAMES = {
     "location", "area", "block", "scene", "route", "unit", "dispatch",
     "suspect", "victim", "male", "female", "supervisor", "officer",
@@ -57,7 +65,7 @@ STREET_SUFFIX_RE = re.compile(
 )
 
 CODE_PATTERN_RE = re.compile(
-    r"^(?:RD|rd|incident|code|unit)\s*[-#]?\s*\d+$",
+    r"^(?:RD|rd|incident|code|unit)\s*[-#]?\s*[\d][\d-]*$",
     re.IGNORECASE,
 )
 
@@ -183,6 +191,7 @@ def extract_entities(text: str, config: GoogleNLPConfig) -> list[ExtractedLocati
         return []
 
     cleaned = UNIT_CALLSIGN_RE.sub("", cleaned)
+    cleaned = DISPATCH_REF_RE.sub("", cleaned)
 
     try:
         entities = _call_nlp(cleaned, config.api_key)
