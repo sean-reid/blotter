@@ -5,7 +5,7 @@ import Map from "./components/Map";
 import SearchBox from "./components/SearchBox";
 import TranscriptList from "./components/TranscriptList";
 import TranscriptPanel from "./components/TranscriptPanel";
-import { fetchEventForTranscript, fetchEvents, searchTranscripts } from "./lib/api";
+import { fetchEvents, searchTranscripts } from "./lib/api";
 import type { ScannerEvent, TimeRange, TranscriptResult } from "./lib/types";
 
 const POLL_INTERVAL = 15_000;
@@ -67,44 +67,15 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
-  const findEventForTranscript = useCallback((t: TranscriptResult): ScannerEvent | null => {
-    const tTs = new Date(
-      t.archive_ts.includes("Z") || t.archive_ts.includes("+")
-        ? t.archive_ts : t.archive_ts.replace(" ", "T") + "Z"
-    ).getTime() / 1000;
-    return events.find((e) => {
-      if (e.feed_id !== t.feed_id) return false;
-      const eTs = new Date(
-        e.archive_ts.includes("Z") || e.archive_ts.includes("+")
-          ? e.archive_ts : e.archive_ts.replace(" ", "T") + "Z"
-      ).getTime() / 1000;
-      return Math.abs(eTs - tTs) < 120;
-    }) ?? null;
-  }, [events]);
-
   const handleEventClick = useCallback((event: ScannerEvent | null) => {
     setSelectedEvent(event);
     setSelectedTranscript(null);
   }, []);
 
-  const handleTranscriptSelect = useCallback(async (result: TranscriptResult) => {
-    const local = findEventForTranscript(result);
-    if (local) {
-      setSelectedEvent(local);
-      setSelectedTranscript(null);
-      return;
-    }
-    try {
-      const remote = await fetchEventForTranscript(result.feed_id, result.archive_ts);
-      if (remote) {
-        setSelectedEvent(remote);
-        setSelectedTranscript(null);
-        return;
-      }
-    } catch {}
+  const handleTranscriptSelect = useCallback((result: TranscriptResult) => {
     setSelectedTranscript(result);
     setSelectedEvent(null);
-  }, [findEventForTranscript]);
+  }, []);
 
   const handleClosePanel = useCallback(() => {
     setSelectedEvent(null);
