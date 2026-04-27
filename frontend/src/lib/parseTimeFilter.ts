@@ -25,8 +25,15 @@ function check(range: TimeRange, cleanQuery: string): ParseResult {
   return { cleanQuery, timeRange: range, tooLarge: false };
 }
 
+const TOO_LARGE_RE =
+  /\b(?:last|past)\s+(?:\d+\s+)?(?:months?|years?)\b/i;
+
 export function parseTimeFilter(input: string): ParseResult {
   const now = Math.floor(Date.now() / 1000);
+
+  if (TOO_LARGE_RE.test(input)) {
+    return { cleanQuery: input, timeRange: null, tooLarge: true };
+  }
 
   const shorthand = input.match(SHORTHAND_RE);
   if (shorthand) {
