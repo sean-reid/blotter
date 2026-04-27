@@ -123,10 +123,9 @@ export default function TranscriptPlayer({ audioUrl, segments, context }: Props)
 
   const range = context ? findContextRange(segments, context) : null;
   const startTime = range?.startTime ?? 0;
-  const segEndTime = range?.endTime ?? (segments.length > 0 ? segments[segments.length - 1]!.end : 0);
-  const endTime = audioDuration > 0
-    ? (segEndTime > 0 ? Math.min(segEndTime, audioDuration) : audioDuration)
-    : segEndTime;
+  const endTime = range
+    ? (audioDuration > 0 ? Math.min(range.endTime, audioDuration) : range.endTime)
+    : (audioDuration > 0 ? audioDuration : (segments.length > 0 ? segments[segments.length - 1]!.end : 0));
   const clipDuration = endTime - startTime;
 
   const visibleSegments = range
