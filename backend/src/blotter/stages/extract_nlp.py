@@ -25,6 +25,8 @@ SKIP_NAMES = {
     "central", "pacific", "rampart", "hollenbeck", "harbor",
     "hollywood", "wilshire", "devonshire", "foothill", "topanga",
     "newton", "olympic", "mission", "van nuys",
+    "west valley", "north hollywood", "west la", "northeast",
+    "77th street", "south bureau", "west bureau", "valley bureau",
     "division", "bureau", "station", "frequency",
     "charles", "adam", "lincoln", "mary", "boy", "king", "tom",
     "front desk", "front", "desk", "system", "radio", "channel",
