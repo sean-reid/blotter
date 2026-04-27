@@ -24,6 +24,9 @@ export default function App() {
   const [rawInput, setRawInput] = useState("");
   const [transcriptResults, setTranscriptResults] = useState<TranscriptResult[]>([]);
   const [selectedTranscript, setSelectedTranscript] = useState<TranscriptResult | null>(null);
+  const eventsRef = useRef(events);
+  eventsRef.current = events;
+
   const loadEvents = useCallback(async () => {
     const data = await fetchEvents(
       timeRange.start,
@@ -31,6 +34,11 @@ export default function App() {
       undefined,
       searchQuery || undefined,
     );
+    const prev = eventsRef.current;
+    if (
+      data.length === prev.length &&
+      data.every((e, i) => e.feed_id === prev[i]?.feed_id && e.event_ts === prev[i]?.event_ts)
+    ) return;
     setEvents(data);
   }, [timeRange, searchQuery]);
 
@@ -48,12 +56,6 @@ export default function App() {
 
   const timeRangeRef = useRef(timeRange);
   timeRangeRef.current = timeRange;
-  const loadEventsRef = useRef(loadEvents);
-  loadEventsRef.current = loadEvents;
-  const loadTranscriptsRef = useRef(loadTranscripts);
-  loadTranscriptsRef.current = loadTranscripts;
-  const rawInputRef = useRef(rawInput);
-  rawInputRef.current = rawInput;
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -61,8 +63,6 @@ export default function App() {
       const now = Math.floor(Date.now() / 1000);
       const duration = r.end - r.start;
       setTimeRange({ start: now - duration, end: now });
-      loadEventsRef.current();
-      if (rawInputRef.current.trim()) loadTranscriptsRef.current();
     }, POLL_INTERVAL);
     return () => clearInterval(id);
   }, []);

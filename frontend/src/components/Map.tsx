@@ -1,6 +1,6 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import { LngLatBounds } from "maplibre-gl";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import MapGL, {
   Layer,
   type MapRef,
@@ -51,6 +51,7 @@ function eventsToGeoJSON(
 
 export default function Map({ events, selectedEvent, onEventClick }: Props) {
   const mapRef = useRef<MapRef>(null);
+  const geojson = useMemo(() => eventsToGeoJSON(events, selectedEvent), [events, selectedEvent]);
 
   const fitAll = useCallback(() => {
     const map = mapRef.current;
@@ -135,7 +136,7 @@ export default function Map({ events, selectedEvent, onEventClick }: Props) {
       <Source
         id="events"
         type="geojson"
-        data={eventsToGeoJSON(events, selectedEvent)}
+        data={geojson}
         cluster={true}
         clusterMaxZoom={14}
         clusterRadius={50}
