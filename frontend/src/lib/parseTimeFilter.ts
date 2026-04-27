@@ -1,9 +1,10 @@
 import * as chrono from "chrono-node";
 import type { TimeRange } from "./types";
 
-interface ParseResult {
+export interface ParseResult {
   cleanQuery: string;
   timeRange: TimeRange | null;
+  tooLarge: boolean;
 }
 
 const WORD_NUMBERS: Record<string, number> = {
@@ -15,7 +16,14 @@ const WORD_NUMBERS: Record<string, number> = {
 const SHORTHAND_RE =
   /\b(?:last|past)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty)?\s*(hours?|hrs?|h|minutes?|mins?|m|days?|d|weeks?|wks?|w)\b/i;
 
-const MAX_RANGE_SECONDS = 7 * 86400;
+export const MAX_RANGE_SECONDS = 7 * 86400;
+
+function check(range: TimeRange, cleanQuery: string): ParseResult {
+  if (range.end - range.start > MAX_RANGE_SECONDS) {
+    return { cleanQuery, timeRange: null, tooLarge: true };
+  }
+  return { cleanQuery, timeRange: range, tooLarge: false };
+}
 
 export function parseTimeFilter(input: string): ParseResult {
   const now = Math.floor(Date.now() / 1000);
@@ -30,30 +38,30 @@ export function parseTimeFilter(input: string): ParseResult {
     const mult: Record<string, number> = {
       h: 3600, m: 60, d: 86400, w: 604800,
     };
-    return {
-      cleanQuery: strip(input, shorthand[0]),
-      timeRange: clamp({ start: now - n * (mult[unit] ?? 3600), end: now }),
-    };
+    return check(
+      { start: now - n * (mult[unit] ?? 3600), end: now },
+      strip(input, shorthand[0]),
+    );
   }
 
   const morningMatch = input.match(/\bthis\s+morning\b/i);
   if (morningMatch) {
     const sixAm = new Date();
     sixAm.setHours(6, 0, 0, 0);
-    return {
-      cleanQuery: strip(input, morningMatch[0]),
-      timeRange: { start: Math.floor(sixAm.getTime() / 1000), end: now },
-    };
+    return check(
+      { start: Math.floor(sixAm.getTime() / 1000), end: now },
+      strip(input, morningMatch[0]),
+    );
   }
 
   const tonightMatch = input.match(/\b(?:tonight|this\s+evening)\b/i);
   if (tonightMatch) {
     const sixPm = new Date();
     sixPm.setHours(18, 0, 0, 0);
-    return {
-      cleanQuery: strip(input, tonightMatch[0]),
-      timeRange: { start: Math.floor(sixPm.getTime() / 1000), end: now },
-    };
+    return check(
+      { start: Math.floor(sixPm.getTime() / 1000), end: now },
+      strip(input, tonightMatch[0]),
+    );
   }
 
   const parsed = chrono.parse(input, new Date(), { forwardDate: false });
@@ -79,23 +87,16 @@ export function parseTimeFilter(input: string): ParseResult {
       endDate = new Date(Math.min(startDate.getTime() + 3600_000, Date.now()));
     }
 
-    return {
-      cleanQuery: strip(input, result.text),
-      timeRange: clamp({
+    return check(
+      {
         start: Math.floor(startDate.getTime() / 1000),
         end: Math.floor(endDate.getTime() / 1000),
-      }),
-    };
+      },
+      strip(input, result.text),
+    );
   }
 
-  return { cleanQuery: input, timeRange: null };
-}
-
-function clamp(range: TimeRange): TimeRange {
-  if (range.end - range.start > MAX_RANGE_SECONDS) {
-    return { start: range.end - MAX_RANGE_SECONDS, end: range.end };
-  }
-  return range;
+  return { cleanQuery: input, timeRange: null, tooLarge: false };
 }
 
 function strip(input: string, match: string): string {

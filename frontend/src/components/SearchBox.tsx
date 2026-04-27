@@ -3,7 +3,7 @@ import { parseTimeFilter } from "../lib/parseTimeFilter";
 import type { TimeRange } from "../lib/types";
 
 interface Props {
-  onTimeRangeChange: (range: TimeRange) => void;
+  onTimeRangeChange: (range: TimeRange | null) => void;
   onSearch: (query: string) => void;
   onInputChange?: (raw: string) => void;
   onAbout: () => void;
@@ -46,6 +46,7 @@ export default function SearchBox({
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const [activeRange, setActiveRange] = useState<TimeRange | null>(null);
+  const [rangeTooLarge, setRangeTooLarge] = useState(false);
   const [phIdx, setPhIdx] = useState(0);
   const [phVisible, setPhVisible] = useState(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -66,11 +67,11 @@ export default function SearchBox({
 
   useEffect(() => {
     if (!query) return;
-    const { timeRange: parsed } = parseTimeFilter(query);
-    if (!parsed) return;
+    const { timeRange: parsed, tooLarge } = parseTimeFilter(query);
+    if (!parsed || tooLarge) return;
     const id = setInterval(() => {
-      const { cleanQuery, timeRange: fresh } = parseTimeFilter(query);
-      if (fresh) {
+      const { cleanQuery, timeRange: fresh, tooLarge: freshTooLarge } = parseTimeFilter(query);
+      if (fresh && !freshTooLarge) {
         callbacksRef.current.onTimeRangeChange(fresh);
         setActiveRange(fresh);
         callbacksRef.current.onSearch(cleanQuery.trim());
@@ -84,7 +85,15 @@ export default function SearchBox({
     onInputChange?.(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
-    const { cleanQuery, timeRange: parsed } = parseTimeFilter(value);
+    const { cleanQuery, timeRange: parsed, tooLarge } = parseTimeFilter(value);
+    if (tooLarge) {
+      setRangeTooLarge(true);
+      setActiveRange(null);
+      onTimeRangeChange(null);
+      onSearch("");
+      return;
+    }
+    setRangeTooLarge(false);
     if (parsed) {
       onTimeRangeChange(parsed);
       setActiveRange(parsed);
@@ -98,6 +107,7 @@ export default function SearchBox({
   const handleClear = () => {
     setQuery("");
     setActiveRange(null);
+    setRangeTooLarge(false);
     onInputChange?.("");
     onSearch("");
     const now = Math.floor(Date.now() / 1000);
@@ -187,7 +197,18 @@ export default function SearchBox({
         </div>
       </div>
 
-      {activeRange && (
+      {rangeTooLarge && (
+        <div className="px-3 pb-2 -mt-0.5">
+          <span className="inline-flex items-center gap-1.5 text-[11px] text-[#e5534b]">
+            <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+            </svg>
+            Time range too large, max 7 days
+          </span>
+        </div>
+      )}
+
+      {activeRange && !rangeTooLarge && (
         <div className="px-3 pb-2 -mt-0.5">
           <span className="inline-flex items-center gap-1.5 text-[11px] text-[#539bf5]">
             <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>

@@ -16,7 +16,7 @@ function freshDefault(): TimeRange {
 }
 
 export default function App() {
-  const [timeRange, setTimeRange] = useState<TimeRange>(freshDefault);
+  const [timeRange, setTimeRange] = useState<TimeRange | null>(freshDefault);
   const [events, setEvents] = useState<ScannerEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<ScannerEvent | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -28,6 +28,10 @@ export default function App() {
   eventsRef.current = events;
 
   const loadEvents = useCallback(async () => {
+    if (!timeRange) {
+      setEvents([]);
+      return;
+    }
     const data = await fetchEvents(
       timeRange.start,
       timeRange.end,
@@ -43,7 +47,7 @@ export default function App() {
   }, [timeRange, searchQuery]);
 
   const loadTranscripts = useCallback(async () => {
-    if (!rawInput.trim()) {
+    if (!rawInput.trim() || !timeRange) {
       setTranscriptResults([]);
       return;
     }
@@ -66,6 +70,7 @@ export default function App() {
   useEffect(() => {
     const id = setInterval(() => {
       const r = timeRangeRef.current;
+      if (!r) return;
       const now = Math.floor(Date.now() / 1000);
       const duration = r.end - r.start;
       const drift = now - r.end;
