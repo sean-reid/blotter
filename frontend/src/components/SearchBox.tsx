@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { parseTimeFilter } from "../lib/parseTimeFilter";
 import type { TimeRange } from "../lib/types";
 
@@ -9,6 +9,34 @@ interface Props {
   onAbout: () => void;
 }
 
+const PLACEHOLDERS = [
+  "Search dispatch audio...",
+  "robbery last 2 hours",
+  "shots fired tonight",
+  "242 this morning",
+  "Venice Blvd yesterday",
+  "pursuit last 30 minutes",
+  "DUI last 3 days",
+];
+
+const ROTATE_MS = 4000;
+const FADE_MS = 300;
+
+function formatTimeLabel(range: TimeRange): string {
+  const fmt = (ts: number) => {
+    const d = new Date(ts * 1000);
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    if (isToday) {
+      return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    }
+    return d.toLocaleDateString(undefined, {
+      month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+    });
+  };
+  return `${fmt(range.start)} – ${fmt(range.end)}`;
+}
+
 export default function SearchBox({
   onTimeRangeChange,
   onSearch,
@@ -17,21 +45,42 @@ export default function SearchBox({
 }: Props) {
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
+  const [activeRange, setActiveRange] = useState<TimeRange | null>(null);
+  const [phIdx, setPhIdx] = useState(0);
+  const [phVisible, setPhVisible] = useState(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const handleChange = (value: string) => {
+  useEffect(() => {
+    if (query || focused) return;
+    const id = setInterval(() => {
+      setPhVisible(false);
+      setTimeout(() => {
+        setPhIdx((i) => (i + 1) % PLACEHOLDERS.length);
+        setPhVisible(true);
+      }, FADE_MS);
+    }, ROTATE_MS);
+    return () => clearInterval(id);
+  }, [query, focused]);
+
+  const handleChange = useCallback((value: string) => {
     setQuery(value);
     onInputChange?.(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     const { cleanQuery, timeRange: parsed } = parseTimeFilter(value);
-    if (parsed) onTimeRangeChange(parsed);
+    if (parsed) {
+      onTimeRangeChange(parsed);
+      setActiveRange(parsed);
+    } else {
+      setActiveRange(null);
+    }
 
     debounceRef.current = setTimeout(() => onSearch(cleanQuery.trim()), 300);
-  };
+  }, [onInputChange, onTimeRangeChange, onSearch]);
 
   const handleClear = () => {
     setQuery("");
+    setActiveRange(null);
     onInputChange?.("");
     onSearch("");
   };
@@ -70,13 +119,22 @@ export default function SearchBox({
           </svg>
         </div>
 
+        {!query && !focused && (
+          <span
+            className="absolute left-9 top-1/2 -translate-y-1/2 text-sm text-[#545d68] pointer-events-none select-none transition-opacity duration-300"
+            style={{ opacity: phVisible ? 1 : 0 }}
+          >
+            {PLACEHOLDERS[phIdx]}
+          </span>
+        )}
+
         <input
           type="text"
           value={query}
           onChange={(e) => handleChange(e.target.value)}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          placeholder="Search dispatch audio..."
+          placeholder={focused ? "Search dispatch audio..." : ""}
           className="
             w-full pl-9 pr-9 py-2.5
             text-sm text-[#e6edf3] placeholder-[#545d68]
@@ -109,6 +167,17 @@ export default function SearchBox({
           ) : null}
         </div>
       </div>
+
+      {activeRange && (
+        <div className="px-3 pb-2 -mt-0.5">
+          <span className="inline-flex items-center gap-1.5 text-[11px] text-[#539bf5]">
+            <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            {formatTimeLabel(activeRange)}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
