@@ -46,7 +46,7 @@ class StreamTranscriber:
             duration_ms = self._get_duration_ms(local_path)
 
             audio_path = local_path
-            if task.skip_start and self._stream_config.ad_skip_seconds > 0:
+            if self._stream_config.ad_skip_seconds > 0:
                 audio_path = self._trim_start(local_path, self._stream_config.ad_skip_seconds)
                 self._gcs.upload(audio_path, task.chunk_path)
                 duration_ms = self._get_duration_ms(audio_path)

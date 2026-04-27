@@ -21,6 +21,9 @@ AD_KEYWORDS = [
     "cash back", "credit card", "loan", "mortgage",
     "commercial free", "sponsor", "brought to you by",
     "jesse crisp",
+    "wells fargo", "wellsfargo",
+    "overdraft", "banking account", "clear access",
+    "heavy metal tea",
 ]
 
 AD_KEYWORD_RE = re.compile("|".join(re.escape(k) for k in AD_KEYWORDS), re.IGNORECASE)
