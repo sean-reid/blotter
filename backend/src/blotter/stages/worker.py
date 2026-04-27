@@ -1,4 +1,5 @@
 import signal
+import time
 from datetime import datetime, timezone
 from threading import Event
 
@@ -24,6 +25,19 @@ from blotter.stages.stream_transcribe import StreamTranscriber
 log = get_logger(__name__)
 
 
+def _connect_clickhouse(ch_config: ClickHouseConfig, max_retries: int = 30, delay: int = 5):
+    for attempt in range(1, max_retries + 1):
+        try:
+            ch = get_client(ch_config)
+            ch.command("SELECT 1")
+            return ch
+        except Exception:
+            if attempt == max_retries:
+                raise
+            log.warning("clickhouse not ready, retrying", attempt=attempt, delay=delay)
+            time.sleep(delay)
+
+
 def run_capture(
     stream_config: StreamConfig,
     gcs_config: GCSConfig,
@@ -43,7 +57,7 @@ def run_transcriber(
     transcriber = StreamTranscriber(transcription_config, stream_config, gcs_config)
     storage = get_storage(gcs_config)
     r = get_redis(redis_config)
-    ch = get_client(ch_config)
+    ch = _connect_clickhouse(ch_config)
     stop = Event()
 
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
@@ -111,7 +125,7 @@ def run_processor(
     region_config: RegionConfig,
 ) -> None:
     r = get_redis(redis_config)
-    ch = get_client(ch_config)
+    ch = _connect_clickhouse(ch_config)
     geocoder = Geocoder(geocoding_config, region_config)
     stop = Event()
 
