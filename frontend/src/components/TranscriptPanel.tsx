@@ -6,7 +6,6 @@ import TranscriptPlayer from "./TranscriptPlayer";
 
 interface Props {
   transcript: TranscriptResult;
-  query?: string;
   onClose: () => void;
   onEventFound?: (event: ScannerEvent) => void;
 }
@@ -39,21 +38,7 @@ function parseSegments(raw: string): TranscriptSegment[] {
   }
 }
 
-function buildContext(segments: TranscriptSegment[], query: string): string | undefined {
-  if (!query || !segments.length) return undefined;
-  const full = segments.map((s) => s.text).join(" ");
-  const lower = full.toLowerCase();
-  const idx = lower.indexOf(query.toLowerCase());
-  if (idx === -1) return undefined;
-  const start = Math.max(0, idx - 120);
-  const end = Math.min(full.length, idx + query.length + 120);
-  let s = full.slice(start, end);
-  if (start > 0) s = "..." + s;
-  if (end < full.length) s = s + "...";
-  return s;
-}
-
-export default function TranscriptPanel({ transcript, query, onClose, onEventFound }: Props) {
+export default function TranscriptPanel({ transcript, onClose, onEventFound }: Props) {
   const [visible] = useState(true);
   const [event, setEvent] = useState<ScannerEvent | null>(null);
 
@@ -69,7 +54,7 @@ export default function TranscriptPanel({ transcript, query, onClose, onEventFou
 
   const tags = transcript.tags || event?.tags;
   const segments = parseSegments(transcript.segments);
-  const context = buildContext(segments, query ?? "") ?? event?.context;
+  const context = transcript.context || event?.context;
 
   return (
     <>

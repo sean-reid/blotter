@@ -26,6 +26,7 @@ export interface TranscriptResult {
   transcript: string;
   segments: string;
   tags: string;
+  context: string;
 }
 
 export interface TimeRange {

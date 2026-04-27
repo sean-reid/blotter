@@ -60,7 +60,7 @@ export async function fetchTranscriptForEvent(
 ): Promise<TranscriptResult | null> {
   const escaped = feedId.replace(/'/g, "\\'");
   const sql =
-    `SELECT feed_id, feed_name, archive_ts, duration_ms, audio_url, transcript, segments, tags ` +
+    `SELECT feed_id, feed_name, archive_ts, duration_ms, audio_url, transcript, segments, tags, '' AS context ` +
     `FROM blotter.scanner_transcripts ` +
     `WHERE feed_id = '${escaped}' ` +
     `AND length(transcript) > 0 ` +
@@ -93,14 +93,19 @@ export async function searchTranscripts(
   startTs: number,
   endTs: number,
 ): Promise<TranscriptResult[]> {
+  const escaped = term ? term.replace(/'/g, "\\'").replace(/%/g, "\\%").replace(/_/g, "\\_") : "";
+
+  const contextExpr = escaped
+    ? `substring(transcript, greatest(1, positionCaseInsensitive(transcript, '${escaped}') - 120), ${escaped.length} + 240) AS context`
+    : `'' AS context`;
+
   let sql =
-    `SELECT feed_id, feed_name, archive_ts, duration_ms, audio_url, transcript, segments, tags ` +
+    `SELECT feed_id, feed_name, archive_ts, duration_ms, audio_url, transcript, segments, tags, ${contextExpr} ` +
     `FROM blotter.scanner_transcripts ` +
     `WHERE length(transcript) > 0 ` +
     `AND archive_ts BETWEEN fromUnixTimestamp(${startTs}) AND fromUnixTimestamp(${endTs})`;
 
-  if (term) {
-    const escaped = term.replace(/'/g, "\\'").replace(/%/g, "\\%").replace(/_/g, "\\_");
+  if (escaped) {
     sql += ` AND (transcript ILIKE '%${escaped}%' OR tags ILIKE '%${escaped}%')`;
   }
 
