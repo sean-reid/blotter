@@ -88,12 +88,19 @@ export default function App() {
   }, []);
 
   const handleTranscriptSelect = useCallback((result: TranscriptResult) => {
-    setSelectedTranscript(result);
-    setSelectedEvent(findEventForTranscript(result));
+    const matched = findEventForTranscript(result);
+    if (matched) {
+      setSelectedEvent(matched);
+      setSelectedTranscript(null);
+    } else {
+      setSelectedTranscript(result);
+      setSelectedEvent(null);
+    }
   }, [findEventForTranscript]);
 
   const handleEventFound = useCallback((event: ScannerEvent) => {
     setSelectedEvent(event);
+    setSelectedTranscript(null);
   }, []);
 
   const handleClosePanel = useCallback(() => {
