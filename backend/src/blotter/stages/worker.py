@@ -156,7 +156,7 @@ def run_processor(
                     normalized=name,
                     latitude=lat,
                     longitude=lon,
-                    confidence=0.8,
+                    confidence=e.confidence,
                     context=e.context,
                     tags=task.tags,
                 ))
