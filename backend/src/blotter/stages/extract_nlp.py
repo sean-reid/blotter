@@ -11,6 +11,7 @@ log = get_logger(__name__)
 
 LOCATION_TYPES = {"LOCATION", "ADDRESS"}
 INTERSECTION_ENTITY_TYPES = {"LOCATION", "ADDRESS", "PERSON"}
+MIN_SALIENCE = 0.03
 
 JUNCTION_RE = re.compile(r"\band\b|\bat\b|&|/|,", re.IGNORECASE)
 
@@ -201,6 +202,9 @@ def extract_entities(text: str, config: GoogleNLPConfig) -> list[ExtractedLocati
             continue
         if not _is_plausible_location(name):
             continue
+        salience = entity.get("salience", 0.0)
+        if salience < MIN_SALIENCE:
+            continue
         key = name.lower()
         if key in seen:
             continue
@@ -215,7 +219,7 @@ def extract_entities(text: str, config: GoogleNLPConfig) -> list[ExtractedLocati
         locations.append(ExtractedLocation(
             raw_text=mention_text,
             normalized=name,
-            confidence=entity.get("salience", 0.0),
+            confidence=salience,
             source="nlp",
             context=_get_context(text, mention_text),
         ))
