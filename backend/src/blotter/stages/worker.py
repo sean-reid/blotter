@@ -7,6 +7,7 @@ from blotter.config import (
     RedisConfig, RegionConfig, StreamConfig, TranscriptionConfig,
 )
 from blotter.db import get_client, has_recent_event, insert_events, insert_transcript
+from blotter.gcs import get_storage
 from blotter.log import get_logger
 from blotter.models import GeocodedEvent, Transcript, TranscriptTask
 from blotter.queue import (
@@ -40,6 +41,7 @@ def run_transcriber(
     ch_config: ClickHouseConfig,
 ) -> None:
     transcriber = StreamTranscriber(transcription_config, stream_config, gcs_config)
+    storage = get_storage(gcs_config)
     r = get_redis(redis_config)
     ch = get_client(ch_config)
     stop = Event()
@@ -56,6 +58,14 @@ def run_transcriber(
 
         try:
             segments, full_text, actual_duration_ms = transcriber.process_chunk(task)
+
+            if not full_text:
+                try:
+                    storage.delete(task.chunk_path)
+                except Exception:
+                    log.debug("failed to delete empty chunk", chunk_path=task.chunk_path, exc_info=True)
+                continue
+
             tags = extract_codes(full_text)
             duration_ms = actual_duration_ms or task.duration_ms
 

@@ -34,6 +34,10 @@ class LocalStorageClient:
     def signed_url(self, gcs_path: str, expiration_hours: int = 24) -> str:
         return self.public_url(gcs_path)
 
+    def delete(self, gcs_path: str) -> None:
+        path = self._base / gcs_path
+        path.unlink(missing_ok=True)
+
     def exists(self, gcs_path: str) -> bool:
         return (self._base / gcs_path).exists()
 
@@ -62,6 +66,11 @@ class GCSClient:
     def signed_url(self, gcs_path: str, expiration_hours: int = 24) -> str:
         blob = self._bucket.blob(gcs_path)
         return blob.generate_signed_url(expiration=timedelta(hours=expiration_hours))
+
+    def delete(self, gcs_path: str) -> None:
+        blob = self._bucket.blob(gcs_path)
+        blob.delete()
+        log.info("deleted from gcs", path=gcs_path)
 
     def exists(self, gcs_path: str) -> bool:
         return self._bucket.blob(gcs_path).exists()
