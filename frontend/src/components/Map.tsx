@@ -190,6 +190,7 @@ export default function Map({ events, selectedEvent, onEventClick }: Props) {
         <Layer
           id="selected-ring"
           type="circle"
+          minzoom={13}
           paint={{
             "circle-radius": 12,
             "circle-color": "transparent",

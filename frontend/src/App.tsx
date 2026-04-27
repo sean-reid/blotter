@@ -67,6 +67,21 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
+  const findEventForTranscript = useCallback((t: TranscriptResult): ScannerEvent | null => {
+    const tTs = new Date(
+      t.archive_ts.includes("Z") || t.archive_ts.includes("+")
+        ? t.archive_ts : t.archive_ts.replace(" ", "T") + "Z"
+    ).getTime() / 1000;
+    return events.find((e) => {
+      if (e.feed_id !== t.feed_id) return false;
+      const eTs = new Date(
+        e.archive_ts.includes("Z") || e.archive_ts.includes("+")
+          ? e.archive_ts : e.archive_ts.replace(" ", "T") + "Z"
+      ).getTime() / 1000;
+      return Math.abs(eTs - tTs) < 120;
+    }) ?? null;
+  }, [events]);
+
   const handleEventClick = useCallback((event: ScannerEvent) => {
     setSelectedEvent(event);
     setSelectedTranscript(null);
@@ -74,8 +89,8 @@ export default function App() {
 
   const handleTranscriptSelect = useCallback((result: TranscriptResult) => {
     setSelectedTranscript(result);
-    setSelectedEvent(null);
-  }, []);
+    setSelectedEvent(findEventForTranscript(result));
+  }, [findEventForTranscript]);
 
   const handleClosePanel = useCallback(() => {
     setSelectedEvent(null);
@@ -110,10 +125,12 @@ export default function App() {
         </div>
       </div>
 
-      <EventPanel
-        event={selectedEvent}
-        onClose={handleClosePanel}
-      />
+      {!selectedTranscript && (
+        <EventPanel
+          event={selectedEvent}
+          onClose={handleClosePanel}
+        />
+      )}
 
       {selectedTranscript && (
         <TranscriptPanel
