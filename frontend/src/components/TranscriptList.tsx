@@ -4,27 +4,11 @@ import Tags from "./Tags";
 interface Props {
   results: TranscriptResult[];
   query: string;
-  events: ScannerEvent[];
+  matchedEvents: ScannerEvent[];
   selectedTranscript: TranscriptResult | null;
   selectedEvent: ScannerEvent | null;
-  onSelect: (result: TranscriptResult) => void;
-}
-
-function hasMatchingEvent(t: TranscriptResult, events: ScannerEvent[]): ScannerEvent | undefined {
-  const tTs = new Date(
-    t.archive_ts.includes("Z") || t.archive_ts.includes("+")
-      ? t.archive_ts
-      : t.archive_ts.replace(" ", "T") + "Z"
-  ).getTime() / 1000;
-  return events.find((e) => {
-    if (e.feed_id !== t.feed_id) return false;
-    const eTs = new Date(
-      e.archive_ts.includes("Z") || e.archive_ts.includes("+")
-        ? e.archive_ts
-        : e.archive_ts.replace(" ", "T") + "Z"
-    ).getTime() / 1000;
-    return Math.abs(eTs - tTs) < 120;
-  });
+  onSelectTranscript: (result: TranscriptResult) => void;
+  onSelectEvent: (event: ScannerEvent) => void;
 }
 
 function formatDate(ts: string): string {
@@ -50,71 +34,104 @@ function snippet(text: string, query: string, maxLen = 120): string {
   return s;
 }
 
-function transcriptMatchesEvent(t: TranscriptResult, e: ScannerEvent | null): boolean {
-  if (!e) return false;
-  if (e.feed_id !== t.feed_id) return false;
-  const tTs = new Date(
-    t.archive_ts.includes("Z") || t.archive_ts.includes("+")
-      ? t.archive_ts : t.archive_ts.replace(" ", "T") + "Z"
-  ).getTime() / 1000;
-  const eTs = new Date(
-    e.archive_ts.includes("Z") || e.archive_ts.includes("+")
-      ? e.archive_ts : e.archive_ts.replace(" ", "T") + "Z"
-  ).getTime() / 1000;
-  return Math.abs(eTs - tTs) < 120;
+function SectionHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="px-3 py-2 border-b border-[#2d333b]">
+      <span className="text-[11px] font-medium uppercase tracking-wider text-[#545d68]">
+        {children}
+      </span>
+    </div>
+  );
 }
 
-export default function TranscriptList({ results, query, events, selectedTranscript, selectedEvent, onSelect }: Props) {
-  if (!results.length) return null;
+export default function TranscriptList({
+  results, query, matchedEvents, selectedTranscript, selectedEvent,
+  onSelectTranscript, onSelectEvent,
+}: Props) {
+  if (!results.length && !matchedEvents.length) return null;
 
   return (
     <div
       className="panel rounded-lg shadow-md mt-1 overflow-hidden"
       style={{ maxHeight: "50vh" }}
     >
-      <div className="px-3 py-2 border-b border-[#2d333b]">
-        <span className="text-[11px] font-medium uppercase tracking-wider text-[#545d68]">
-          Transcripts ({results.length})
-        </span>
-      </div>
-      <div className="overflow-y-auto" style={{ maxHeight: "calc(50vh - 32px)" }}>
-        {results.map((r, i) => {
-          const event = hasMatchingEvent(r, events);
-          const isSelected = (selectedTranscript
-            && r.feed_id === selectedTranscript.feed_id
-            && r.archive_ts === selectedTranscript.archive_ts)
-            || transcriptMatchesEvent(r, selectedEvent);
-          return (
-          <button
-            key={`${r.feed_id}-${r.archive_ts}-${i}`}
-            onClick={() => onSelect(r)}
-            className={`
-              w-full text-left px-3 py-2.5
-              border-b border-[#2d333b]/50 last:border-0
-              transition-colors cursor-pointer
-              ${isSelected ? "bg-[#539bf5]/10 border-l-2 border-l-[#539bf5]" : "hover:bg-[#1c2128]"}
-            `}
-          >
-            <div className="flex items-baseline justify-between gap-2 mb-1">
-              <span className="text-[12px] font-medium text-[#adbac7] truncate flex items-center gap-1.5">
-                {event && (
-                  <svg className="w-3 h-3 shrink-0 text-[#e5534b]" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" />
-                  </svg>
-                )}
-                {r.feed_name || r.feed_id}
-              </span>
-              <span className="text-[10px] tabular-nums text-[#545d68] shrink-0">
-                {formatDate(r.archive_ts)}
-              </span>
-            </div>
-            <div className="text-[12px] leading-relaxed text-[#545d68] line-clamp-2">
-              {snippet(r.transcript, query)}
-            </div>
-            {r.tags && <div className="mt-1"><Tags tags={r.tags} /></div>}
-          </button>
-          );
-        })}
+      <div className="overflow-y-auto" style={{ maxHeight: "50vh" }}>
+        {matchedEvents.length > 0 && (
+          <>
+            <SectionHeader>Events ({matchedEvents.length})</SectionHeader>
+            {matchedEvents.map((e) => {
+              const isSelected = selectedEvent
+                && e.feed_id === selectedEvent.feed_id
+                && e.event_ts === selectedEvent.event_ts;
+              return (
+                <button
+                  key={`evt-${e.feed_id}-${e.event_ts}`}
+                  onClick={() => onSelectEvent(e)}
+                  className={`
+                    w-full text-left px-3 py-2.5
+                    border-b border-[#2d333b]/50
+                    transition-colors cursor-pointer
+                    ${isSelected ? "bg-[#539bf5]/10 border-l-2 border-l-[#539bf5]" : "hover:bg-[#1c2128]"}
+                  `}
+                >
+                  <div className="flex items-baseline justify-between gap-2 mb-1">
+                    <span className="text-[12px] font-medium text-[#adbac7] truncate flex items-center gap-1.5">
+                      <svg className="w-3 h-3 shrink-0 text-[#e5534b]" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" />
+                      </svg>
+                      {e.normalized}
+                    </span>
+                    <span className="text-[10px] tabular-nums text-[#545d68] shrink-0">
+                      {formatDate(e.event_ts)}
+                    </span>
+                  </div>
+                  {e.context && (
+                    <div className="text-[12px] leading-relaxed text-[#545d68] line-clamp-2">
+                      {snippet(e.context, query)}
+                    </div>
+                  )}
+                  {e.tags && <div className="mt-1"><Tags tags={e.tags} /></div>}
+                </button>
+              );
+            })}
+          </>
+        )}
+
+        {results.length > 0 && (
+          <>
+            <SectionHeader>Transcripts ({results.length})</SectionHeader>
+            {results.map((r, i) => {
+              const isSelected = selectedTranscript
+                && r.feed_id === selectedTranscript.feed_id
+                && r.archive_ts === selectedTranscript.archive_ts;
+              return (
+                <button
+                  key={`tr-${r.feed_id}-${r.archive_ts}-${i}`}
+                  onClick={() => onSelectTranscript(r)}
+                  className={`
+                    w-full text-left px-3 py-2.5
+                    border-b border-[#2d333b]/50 last:border-0
+                    transition-colors cursor-pointer
+                    ${isSelected ? "bg-[#539bf5]/10 border-l-2 border-l-[#539bf5]" : "hover:bg-[#1c2128]"}
+                  `}
+                >
+                  <div className="flex items-baseline justify-between gap-2 mb-1">
+                    <span className="text-[12px] font-medium text-[#adbac7] truncate">
+                      {r.feed_name || r.feed_id}
+                    </span>
+                    <span className="text-[10px] tabular-nums text-[#545d68] shrink-0">
+                      {formatDate(r.archive_ts)}
+                    </span>
+                  </div>
+                  <div className="text-[12px] leading-relaxed text-[#545d68] line-clamp-2">
+                    {snippet(r.transcript, query)}
+                  </div>
+                  {r.tags && <div className="mt-1"><Tags tags={r.tags} /></div>}
+                </button>
+              );
+            })}
+          </>
+        )}
       </div>
     </div>
   );
