@@ -60,7 +60,7 @@ SKIP_NAMES = {
 
     # generic place words
     "location", "area", "block", "scene", "route", "place",
-    "corner", "island", "campus",
+    "corner", "island", "campus", "intersection",
 
     # standalone street type words (NLP sometimes returns just "Avenue")
     "street", "avenue", "boulevard", "road", "drive", "way",
@@ -78,7 +78,17 @@ SKIP_NAMES = {
     "newton", "olympic", "mission", "van nuys",
     "west valley", "north hollywood", "west la",
     "77th street", "south bureau", "west bureau", "valley bureau",
+    "central bureau",
     "division", "bureau", "station", "frequency",
+
+    # LAPD station names (NLP extracts these as locations)
+    "hollywood station", "wilshire station", "pacific station",
+    "rampart station", "hollenbeck station", "harbor station",
+    "newton station", "olympic station", "devonshire station",
+    "foothill station", "topanga station", "mission station",
+    "van nuys station", "west valley station", "north hollywood station",
+    "west la station", "77th street station", "southeast station",
+    "southwest station", "central station",
 
     # LAPD phonetic alphabet (standalone)
     "charles", "adam", "lincoln", "mary", "boy", "king", "tom",
@@ -98,6 +108,15 @@ SKIP_NAMES = {
 STREET_SUFFIX_RE = re.compile(
     r"\b(?:street|st|avenue|ave|boulevard|blvd|drive|dr|road|rd|way|"
     r"lane|ln|place|pl|court|ct|highway|hwy|freeway|fwy)\b",
+    re.IGNORECASE,
+)
+
+STREET_ADDRESS_RE = re.compile(
+    r"\b(\d{1,5}\s+"
+    r"(?:north|south|east|west|n\.?|s\.?|e\.?|w\.?)?\s*"
+    r"[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?\s+"
+    r"(?:street|st|avenue|ave|boulevard|blvd|drive|dr|road|rd|way|lane|ln|place|pl|court|ct))"
+    r"\b\.?",
     re.IGNORECASE,
 )
 
@@ -225,10 +244,32 @@ def _dedup_locations(locations: list[ExtractedLocation]) -> list[ExtractedLocati
     return result
 
 
+def _extract_addresses(text: str) -> list[ExtractedLocation]:
+    """Extract explicit street addresses (e.g. '115 South Conway Street') from text."""
+    locations = []
+    seen: set[str] = set()
+    for m in STREET_ADDRESS_RE.finditer(text):
+        addr = m.group(1).strip()
+        key = addr.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        locations.append(ExtractedLocation(
+            raw_text=addr,
+            normalized=addr,
+            confidence=0.9,
+            source="address",
+            context=_get_context(text, addr),
+        ))
+    return locations
+
+
 def extract_entities(text: str, config: GoogleNLPConfig) -> list[ExtractedLocation]:
     cleaned = strip_ads(text)
     if not cleaned or not config.api_key:
         return []
+
+    addresses = _extract_addresses(cleaned)
 
     cleaned = UNIT_CALLSIGN_RE.sub("", cleaned)
     cleaned = DISPATCH_REF_RE.sub("", cleaned)
@@ -238,13 +279,13 @@ def extract_entities(text: str, config: GoogleNLPConfig) -> list[ExtractedLocati
         entities = _call_nlp(cleaned, config.api_key)
     except Exception:
         log.warning("nlp entity extraction failed", exc_info=True)
-        return []
+        return addresses
 
     intersections = _find_intersections(cleaned, entities)
     intersection_names = {name for name, _ in intersections}
 
-    seen: set[str] = set()
-    locations: list[ExtractedLocation] = []
+    seen: set[str] = {loc.normalized.lower() for loc in addresses}
+    locations: list[ExtractedLocation] = list(addresses)
 
     for name, offset in intersections:
         key = name.lower()
@@ -291,5 +332,6 @@ def extract_entities(text: str, config: GoogleNLPConfig) -> list[ExtractedLocati
         ))
 
     locations = _dedup_locations(locations)
-    log.info("nlp entities extracted", count=len(locations), intersections=len(intersections))
+    log.info("nlp entities extracted", count=len(locations),
+             addresses=len(addresses), intersections=len(intersections))
     return locations

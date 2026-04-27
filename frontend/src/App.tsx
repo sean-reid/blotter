@@ -82,7 +82,7 @@ export default function App() {
     }) ?? null;
   }, [events]);
 
-  const handleEventClick = useCallback((event: ScannerEvent) => {
+  const handleEventClick = useCallback((event: ScannerEvent | null) => {
     setSelectedEvent(event);
     setSelectedTranscript(null);
   }, []);

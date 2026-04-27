@@ -18,7 +18,7 @@ const LA_BOUNDS: [[number, number], [number, number]] = [
 interface Props {
   events: ScannerEvent[];
   selectedEvent?: ScannerEvent | null;
-  onEventClick?: (event: ScannerEvent) => void;
+  onEventClick?: (event: ScannerEvent | null) => void;
 }
 
 function eventsToGeoJSON(
@@ -79,7 +79,11 @@ export default function Map({ events, selectedEvent, onEventClick }: Props) {
 
   const handleClick = useCallback(
     (e: maplibregl.MapLayerMouseEvent) => {
-      if (!onEventClick || !e.features?.length) return;
+      if (!onEventClick) return;
+      if (!e.features?.length) {
+        onEventClick(null);
+        return;
+      }
       const props = e.features[0]?.properties;
       if (!props) return;
       const event = events.find(
