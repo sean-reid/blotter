@@ -1,13 +1,11 @@
-import { useEffect, useState } from "react";
-import type { ScannerEvent, TranscriptResult, TranscriptSegment } from "../lib/types";
-import { fetchEventForTranscript } from "../lib/api";
+import { useState } from "react";
+import type { TranscriptResult, TranscriptSegment } from "../lib/types";
 import Tags from "./Tags";
 import TranscriptPlayer from "./TranscriptPlayer";
 
 interface Props {
   transcript: TranscriptResult;
   onClose: () => void;
-  onEventFound?: (event: ScannerEvent) => void;
 }
 
 function formatDate(ts: string): string {
@@ -38,23 +36,11 @@ function parseSegments(raw: string): TranscriptSegment[] {
   }
 }
 
-export default function TranscriptPanel({ transcript, onClose, onEventFound }: Props) {
+export default function TranscriptPanel({ transcript, onClose }: Props) {
   const [visible] = useState(true);
-  const [event, setEvent] = useState<ScannerEvent | null>(null);
-
-  useEffect(() => {
-    setEvent(null);
-    fetchEventForTranscript(transcript.feed_id, transcript.archive_ts)
-      .then((e) => {
-        setEvent(e);
-        if (e && onEventFound) onEventFound(e);
-      })
-      .catch(() => setEvent(null));
-  }, [transcript.feed_id, transcript.archive_ts, onEventFound]);
-
-  const tags = transcript.tags || event?.tags;
+  const tags = transcript.tags;
   const segments = parseSegments(transcript.segments);
-  const context = transcript.context || event?.context;
+  const context = transcript.context || undefined;
 
   return (
     <>
@@ -93,9 +79,7 @@ export default function TranscriptPanel({ transcript, onClose, onEventFound }: P
         </div>
 
         <div className="shrink-0 border-b border-[#2d333b] px-4 py-3 flex justify-between items-center">
-          <h3 className="font-medium text-sm text-[#e6edf3]">
-            {event ? "Event" : "Transcript"}
-          </h3>
+          <h3 className="font-medium text-sm text-[#e6edf3]">Transcript</h3>
           <button
             onClick={onClose}
             className="
@@ -114,22 +98,10 @@ export default function TranscriptPanel({ transcript, onClose, onEventFound }: P
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {event && (
-            <div>
-              <FieldLabel>Location</FieldLabel>
-              <div className="text-sm font-medium text-[#e6edf3] leading-snug">
-                {event.normalized}
-              </div>
-              <div className="text-[11px] text-[#545d68] tabular-nums font-mono mt-1">
-                {event.latitude.toFixed(5)}, {event.longitude.toFixed(5)}
-              </div>
-            </div>
-          )}
-
           <div>
             <FieldLabel>Time</FieldLabel>
             <div className="text-sm text-[#adbac7] tabular-nums">
-              {formatDate(event?.event_ts ?? transcript.archive_ts)}
+              {formatDate(transcript.archive_ts)}
             </div>
           </div>
 
