@@ -63,6 +63,7 @@ class StreamCaptureWorker:
         self._chunk_index = 0
         self._is_fresh_connect = True
         self._pid_file = Path(self.config.chunk_dir) / f".{self.feed_id}.pid"
+        self._last_new_file = time.monotonic()
 
     @property
     def stream_url(self) -> str:
@@ -169,6 +170,8 @@ class StreamCaptureWorker:
         )
         watcher.start()
 
+        stall_timeout = self.config.segment_time * 2.5
+
         try:
             while not self._stop.is_set():
                 retcode = proc.poll()
@@ -176,44 +179,51 @@ class StreamCaptureWorker:
                     stderr = proc.stderr.read().decode(errors="replace") if proc.stderr else ""
                     log.warning("ffmpeg exited", feed_id=self.feed_id, code=retcode, stderr=stderr[-500:])
                     raise RuntimeError(f"ffmpeg exited with code {retcode}")
-                self._stop.wait(1)
+
+                stalled_for = time.monotonic() - self._last_new_file
+                if stalled_for > stall_timeout:
+                    log.warning(
+                        "ffmpeg stalled, restarting",
+                        feed_id=self.feed_id,
+                        stalled_seconds=int(stalled_for),
+                    )
+                    raise RuntimeError("ffmpeg stalled — no new segments")
+
+                self._stop.wait(10)
         finally:
             self._kill_proc(proc)
 
     def _watch_chunks(self) -> None:
-        seen: set[str] = set()
+        pending: Path | None = None
+        self._last_new_file = time.monotonic()
 
-        for f in self.output_dir.iterdir():
+        for f in sorted(self.output_dir.iterdir()):
             if f.suffix == ".wav":
-                seen.add(f.name)
+                pending = f
 
         while not self._stop.is_set():
-            for f in sorted(self.output_dir.iterdir()):
-                if f.suffix != ".wav" or f.name in seen:
-                    continue
-                if not self._is_file_complete(f):
-                    continue
+            files = sorted(
+                (f for f in self.output_dir.iterdir() if f.suffix == ".wav"),
+                key=lambda f: f.name,
+            )
 
-                seen.add(f.name)
-                try:
-                    self._process_chunk(f)
-                except FileNotFoundError:
-                    log.debug("chunk already removed", feed_id=self.feed_id, file=f.name)
-                except Exception:
-                    log.error("chunk processing failed", feed_id=self.feed_id, file=f.name, exc_info=True)
+            if len(files) >= 2:
+                self._last_new_file = time.monotonic()
+                for completed in files[:-1]:
+                    try:
+                        self._process_chunk(completed)
+                    except FileNotFoundError:
+                        log.debug("chunk already removed", feed_id=self.feed_id, file=completed.name)
+                    except Exception:
+                        log.error("chunk processing failed", feed_id=self.feed_id, file=completed.name, exc_info=True)
+            elif len(files) == 1 and pending is None:
+                self._last_new_file = time.monotonic()
+                pending = files[0]
+            elif len(files) == 1 and files[0] != pending:
+                self._last_new_file = time.monotonic()
+                pending = files[0]
 
-            self._stop.wait(2)
-
-    def _is_file_complete(self, path: Path) -> bool:
-        try:
-            size1 = path.stat().st_size
-            if size1 == 0:
-                return False
-            time.sleep(5)
-            size2 = path.stat().st_size
-            return size1 == size2
-        except OSError:
-            return False
+            self._stop.wait(5)
 
     def _process_chunk(self, local_path: Path) -> None:
         now = datetime.now(timezone.utc)
