@@ -15,6 +15,8 @@ const WORD_NUMBERS: Record<string, number> = {
 const SHORTHAND_RE =
   /\b(?:last|past)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty)?\s*(hours?|hrs?|h|minutes?|mins?|m|days?|d|weeks?|wks?|w)\b/i;
 
+const MAX_RANGE_SECONDS = 7 * 86400;
+
 export function parseTimeFilter(input: string): ParseResult {
   const now = Math.floor(Date.now() / 1000);
 
@@ -30,7 +32,7 @@ export function parseTimeFilter(input: string): ParseResult {
     };
     return {
       cleanQuery: strip(input, shorthand[0]),
-      timeRange: { start: now - n * (mult[unit] ?? 3600), end: now },
+      timeRange: clamp({ start: now - n * (mult[unit] ?? 3600), end: now }),
     };
   }
 
@@ -79,14 +81,21 @@ export function parseTimeFilter(input: string): ParseResult {
 
     return {
       cleanQuery: strip(input, result.text),
-      timeRange: {
+      timeRange: clamp({
         start: Math.floor(startDate.getTime() / 1000),
         end: Math.floor(endDate.getTime() / 1000),
-      },
+      }),
     };
   }
 
   return { cleanQuery: input, timeRange: null };
+}
+
+function clamp(range: TimeRange): TimeRange {
+  if (range.end - range.start > MAX_RANGE_SECONDS) {
+    return { start: range.end - MAX_RANGE_SECONDS, end: range.end };
+  }
+  return range;
 }
 
 function strip(input: string, match: string): string {
