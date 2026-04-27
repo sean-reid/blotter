@@ -4,6 +4,14 @@ set -euo pipefail
 REPO_DIR=/workspace/blotter
 export GOOGLE_APPLICATION_CREDENTIALS=/workspace/blotter-gcs-key.json
 
+# Load secrets (REDIS_PASSWORD, CLICKHOUSE_READONLY_PASSWORD)
+SECRETS_FILE=/workspace/blotter/.env.secrets
+if [ -f "$SECRETS_FILE" ]; then
+  set -a; source "$SECRETS_FILE"; set +a
+else
+  echo "[WARN] No .env.secrets — Redis auth and CH password rotation disabled"
+fi
+
 echo "=== Blotter RunPod Start ==="
 
 # Install system dependencies
@@ -81,7 +89,14 @@ done
 
 # Init schema (idempotent)
 clickhouse-client --multiquery < "$REPO_DIR/infra/clickhouse/init.sql" 2>/dev/null
-echo "[OK] Schema"
+
+# Rotate readonly password if set in secrets
+if [ -n "${CLICKHOUSE_READONLY_PASSWORD:-}" ]; then
+  clickhouse-client --query "ALTER USER blotter_readonly IDENTIFIED BY '${CLICKHOUSE_READONLY_PASSWORD}'" 2>/dev/null
+  echo "[OK] Schema + password rotated"
+else
+  echo "[OK] Schema"
+fi
 
 # Check tunnel credentials
 if [ ! -f "$REPO_DIR/infra/cloudflared/credentials.json" ]; then

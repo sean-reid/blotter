@@ -12,6 +12,7 @@ build/
 .env
 .env.local
 .env.production
+.env.secrets
 
 # Audio data
 data/

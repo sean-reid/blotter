@@ -13,7 +13,10 @@ TRANSCRIPT_QUEUE = "blotter:transcribe:done"
 
 
 def get_redis(config: RedisConfig) -> redis.Redis:
-    return redis.Redis(host=config.host, port=config.port, db=config.db, decode_responses=True)
+    return redis.Redis(
+        host=config.host, port=config.port, db=config.db,
+        password=config.password or None, decode_responses=True,
+    )
 
 
 def enqueue_chunk(r: redis.Redis, task: ChunkTask) -> None:

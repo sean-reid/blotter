@@ -271,7 +271,7 @@ class CaptureManager:
         self.gcs = get_storage(gcs_config)
         self.redis = redis.Redis(
             host=redis_config.host, port=redis_config.port, db=redis_config.db,
-            decode_responses=True,
+            password=redis_config.password or None, decode_responses=True,
         )
         self._workers: list[StreamCaptureWorker] = []
         self._stop = Event()

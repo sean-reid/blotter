@@ -1,13 +1,17 @@
 :8888 {
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
 	handle /api/query* {
 		uri strip_prefix /api/query
 		reverse_proxy clickhouse:8123 {
 			header_up X-ClickHouse-User blotter_readonly
-			header_up X-ClickHouse-Key readonly
+			header_up X-ClickHouse-Key {$CLICKHOUSE_READONLY_PASSWORD:readonly}
 		}
-		header Access-Control-Allow-Origin *
-		header Access-Control-Allow-Methods "GET, POST, OPTIONS"
-		header Access-Control-Allow-Headers "Content-Type"
 	}
 
 	handle {

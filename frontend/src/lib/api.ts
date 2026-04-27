@@ -2,11 +2,18 @@ import type { ScannerEvent, TranscriptResult } from "./types";
 
 const QUERY_URL = "/api/query";
 
-async function query<T>(sql: string): Promise<T[]> {
-  const resp = await fetch(QUERY_URL, {
+async function query<T>(sql: string, params?: Record<string, string>): Promise<T[]> {
+  const url = new URL(QUERY_URL, window.location.origin);
+  if (params) {
+    for (const [key, value] of Object.entries(params)) {
+      url.searchParams.set(`param_${key}`, value);
+    }
+  }
+
+  const resp = await fetch(url.toString(), {
     method: "POST",
     headers: { "Content-Type": "text/plain" },
-    body: `${sql} FORMAT JSONEachRow`,
+    body: sql,
   });
   if (!resp.ok) {
     throw new Error(`Query failed: ${resp.status} ${await resp.text()}`);
@@ -25,49 +32,57 @@ export async function fetchEvents(
   bounds?: { west: number; south: number; east: number; north: number },
   search?: string,
 ): Promise<ScannerEvent[]> {
+  const params: Record<string, string> = {
+    startTs: String(startTs),
+    endTs: String(endTs),
+  };
+
   let sql =
     `SELECT e.feed_id, e.archive_ts, e.event_ts, e.raw_location, e.normalized, ` +
     `e.latitude, e.longitude, e.confidence, e.context, e.tags ` +
     `FROM blotter.scanner_events e ` +
-    `WHERE e.event_ts BETWEEN fromUnixTimestamp(${startTs}) AND fromUnixTimestamp(${endTs})`;
+    `WHERE e.event_ts BETWEEN fromUnixTimestamp({startTs:UInt64}) AND fromUnixTimestamp({endTs:UInt64})`;
 
   if (bounds) {
+    params.west = String(bounds.west);
+    params.east = String(bounds.east);
+    params.south = String(bounds.south);
+    params.north = String(bounds.north);
     sql +=
-      ` AND e.longitude BETWEEN ${bounds.west} AND ${bounds.east}` +
-      ` AND e.latitude BETWEEN ${bounds.south} AND ${bounds.north}`;
+      ` AND e.longitude BETWEEN {west:Float64} AND {east:Float64}` +
+      ` AND e.latitude BETWEEN {south:Float64} AND {north:Float64}`;
   }
 
   if (search) {
-    const escaped = search.replace(/'/g, "\\'").replace(/%/g, "\\%").replace(/_/g, "\\_");
+    params.search = `%${search}%`;
     sql +=
-      ` AND (e.context ILIKE '%${escaped}%'` +
-      ` OR e.normalized ILIKE '%${escaped}%'` +
-      ` OR e.raw_location ILIKE '%${escaped}%'` +
-      ` OR e.tags ILIKE '%${escaped}%'` +
+      ` AND (e.context ILIKE {search:String}` +
+      ` OR e.normalized ILIKE {search:String}` +
+      ` OR e.raw_location ILIKE {search:String}` +
+      ` OR e.tags ILIKE {search:String}` +
       ` OR EXISTS (SELECT 1 FROM blotter.scanner_transcripts t` +
       ` WHERE t.feed_id = e.feed_id` +
       ` AND abs(toInt64(t.archive_ts) - toInt64(toDateTime64(e.archive_ts, 3))) < 120` +
-      ` AND (t.transcript ILIKE '%${escaped}%' OR t.tags ILIKE '%${escaped}%')))`;
+      ` AND (t.transcript ILIKE {search:String} OR t.tags ILIKE {search:String})))`;
   }
 
   sql += ` ORDER BY e.event_ts DESC LIMIT 5000`;
-  return query<ScannerEvent>(sql);
+  return query<ScannerEvent>(sql, params);
 }
 
 export async function fetchTranscriptForEvent(
   feedId: string,
   archiveTs: string,
 ): Promise<TranscriptResult | null> {
-  const escaped = feedId.replace(/'/g, "\\'");
   const sql =
     `SELECT feed_id, feed_name, archive_ts, duration_ms, audio_url, transcript, segments, tags, '' AS context ` +
     `FROM blotter.scanner_transcripts ` +
-    `WHERE feed_id = '${escaped}' ` +
+    `WHERE feed_id = {feedId:String} ` +
     `AND length(transcript) > 0 ` +
-    `AND abs(toInt64(archive_ts) - toInt64(toDateTime64('${archiveTs}', 3))) < 120 ` +
-    `ORDER BY abs(toInt64(archive_ts) - toInt64(toDateTime64('${archiveTs}', 3))) ASC ` +
+    `AND abs(toInt64(archive_ts) - toInt64(toDateTime64({archiveTs:String}, 3))) < 120 ` +
+    `ORDER BY abs(toInt64(archive_ts) - toInt64(toDateTime64({archiveTs:String}, 3))) ASC ` +
     `LIMIT 1`;
-  const results = await query<TranscriptResult>(sql);
+  const results = await query<TranscriptResult>(sql, { feedId, archiveTs });
   return results[0] ?? null;
 }
 
@@ -75,16 +90,15 @@ export async function fetchEventForTranscript(
   feedId: string,
   archiveTs: string,
 ): Promise<ScannerEvent | null> {
-  const escaped = feedId.replace(/'/g, "\\'");
   const sql =
     `SELECT feed_id, archive_ts, event_ts, raw_location, normalized, ` +
     `latitude, longitude, confidence, context, tags ` +
     `FROM blotter.scanner_events ` +
-    `WHERE feed_id = '${escaped}' ` +
-    `AND abs(toInt64(toDateTime64(archive_ts, 3)) - toInt64(toDateTime64('${archiveTs}', 3))) < 120 ` +
-    `ORDER BY abs(toInt64(toDateTime64(archive_ts, 3)) - toInt64(toDateTime64('${archiveTs}', 3))) ASC ` +
+    `WHERE feed_id = {feedId:String} ` +
+    `AND abs(toInt64(toDateTime64(archive_ts, 3)) - toInt64(toDateTime64({archiveTs:String}, 3))) < 120 ` +
+    `ORDER BY abs(toInt64(toDateTime64(archive_ts, 3)) - toInt64(toDateTime64({archiveTs:String}, 3))) ASC ` +
     `LIMIT 1`;
-  const results = await query<ScannerEvent>(sql);
+  const results = await query<ScannerEvent>(sql, { feedId, archiveTs });
   return results[0] ?? null;
 }
 
@@ -93,22 +107,32 @@ export async function searchTranscripts(
   startTs: number,
   endTs: number,
 ): Promise<TranscriptResult[]> {
-  const escaped = term ? term.replace(/'/g, "\\'").replace(/%/g, "\\%").replace(/_/g, "\\_") : "";
+  const params: Record<string, string> = {
+    startTs: String(startTs),
+    endTs: String(endTs),
+  };
 
-  const contextExpr = escaped
-    ? `substring(transcript, greatest(1, positionCaseInsensitive(transcript, '${escaped}') - 120), ${escaped.length} + 240) AS context`
-    : `'' AS context`;
+  const hasSearch = !!term;
+
+  let contextExpr: string;
+  if (hasSearch) {
+    params.search = `%${term}%`;
+    params.searchRaw = term;
+    contextExpr = `substring(transcript, greatest(1, positionCaseInsensitive(transcript, {searchRaw:String}) - 120), length({searchRaw:String}) + 240) AS context`;
+  } else {
+    contextExpr = `'' AS context`;
+  }
 
   let sql =
     `SELECT feed_id, feed_name, archive_ts, duration_ms, audio_url, transcript, segments, tags, ${contextExpr} ` +
     `FROM blotter.scanner_transcripts ` +
     `WHERE length(transcript) > 0 ` +
-    `AND archive_ts BETWEEN fromUnixTimestamp(${startTs}) AND fromUnixTimestamp(${endTs})`;
+    `AND archive_ts BETWEEN fromUnixTimestamp({startTs:UInt64}) AND fromUnixTimestamp({endTs:UInt64})`;
 
-  if (escaped) {
-    sql += ` AND (transcript ILIKE '%${escaped}%' OR tags ILIKE '%${escaped}%')`;
+  if (hasSearch) {
+    sql += ` AND (transcript ILIKE {search:String} OR tags ILIKE {search:String})`;
   }
 
   sql += ` ORDER BY archive_ts DESC LIMIT 50`;
-  return query<TranscriptResult>(sql);
+  return query<TranscriptResult>(sql, params);
 }

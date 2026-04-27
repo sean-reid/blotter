@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS blotter.scanner_events (
 ) ENGINE = MergeTree()
 ORDER BY (toDate(event_ts), h3_index, event_ts);
 
-CREATE USER IF NOT EXISTS blotter_readonly IDENTIFIED BY 'readonly'
+-- Password set via ALTER USER after startup; placeholder for initial creation only
+CREATE USER IF NOT EXISTS blotter_readonly IDENTIFIED BY 'changeme'
 SETTINGS PROFILE 'readonly';
 GRANT SELECT ON blotter.* TO blotter_readonly;
