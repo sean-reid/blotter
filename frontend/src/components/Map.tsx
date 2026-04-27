@@ -17,6 +17,7 @@ const LA_BOUNDS: [[number, number], [number, number]] = [
 
 interface Props {
   events: ScannerEvent[];
+  selectedEvent?: ScannerEvent | null;
   onEventClick?: (event: ScannerEvent) => void;
 }
 
@@ -39,7 +40,19 @@ function eventsToGeoJSON(events: ScannerEvent[]): GeoJSON.FeatureCollection {
   };
 }
 
-export default function Map({ events, onEventClick }: Props) {
+function selectedToGeoJSON(event: ScannerEvent | null | undefined): GeoJSON.FeatureCollection {
+  if (!event) return { type: "FeatureCollection", features: [] };
+  return {
+    type: "FeatureCollection",
+    features: [{
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [event.longitude, event.latitude] },
+      properties: {},
+    }],
+  };
+}
+
+export default function Map({ events, selectedEvent, onEventClick }: Props) {
   const mapRef = useRef<MapRef>(null);
 
   const fitAll = useCallback(() => {
@@ -86,7 +99,7 @@ export default function Map({ events, onEventClick }: Props) {
     >
       <NavigationControl position="bottom-left" showCompass={false} />
 
-      <div className="maplibregl-ctrl maplibregl-ctrl-group absolute left-[10px] bottom-[125px] z-10">
+      <div className="maplibregl-ctrl maplibregl-ctrl-group absolute left-[10px] bottom-[85px] z-10">
           <button
             onClick={fitAll}
             title={events.length > 0 ? "Fit all events" : "Show LA County"}
@@ -171,6 +184,19 @@ export default function Map({ events, onEventClick }: Props) {
           }}
         />
 
+      </Source>
+
+      <Source id="selected" type="geojson" data={selectedToGeoJSON(selectedEvent)}>
+        <Layer
+          id="selected-ring"
+          type="circle"
+          paint={{
+            "circle-radius": 12,
+            "circle-color": "transparent",
+            "circle-stroke-width": 2,
+            "circle-stroke-color": "#539bf5",
+          }}
+        />
       </Source>
     </MapGL>
   );

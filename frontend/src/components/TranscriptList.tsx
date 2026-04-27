@@ -5,6 +5,7 @@ interface Props {
   results: TranscriptResult[];
   query: string;
   events: ScannerEvent[];
+  selectedTranscript: TranscriptResult | null;
   onSelect: (result: TranscriptResult) => void;
 }
 
@@ -48,7 +49,7 @@ function snippet(text: string, query: string, maxLen = 120): string {
   return s;
 }
 
-export default function TranscriptList({ results, query, events, onSelect }: Props) {
+export default function TranscriptList({ results, query, events, selectedTranscript, onSelect }: Props) {
   if (!results.length) return null;
 
   return (
@@ -64,16 +65,19 @@ export default function TranscriptList({ results, query, events, onSelect }: Pro
       <div className="overflow-y-auto" style={{ maxHeight: "calc(50vh - 32px)" }}>
         {results.map((r, i) => {
           const event = hasMatchingEvent(r, events);
+          const isSelected = selectedTranscript
+            && r.feed_id === selectedTranscript.feed_id
+            && r.archive_ts === selectedTranscript.archive_ts;
           return (
           <button
             key={`${r.feed_id}-${r.archive_ts}-${i}`}
             onClick={() => onSelect(r)}
-            className="
+            className={`
               w-full text-left px-3 py-2.5
               border-b border-[#2d333b]/50 last:border-0
-              hover:bg-[#1c2128] transition-colors
-              cursor-pointer
-            "
+              transition-colors cursor-pointer
+              ${isSelected ? "bg-[#539bf5]/10 border-l-2 border-l-[#539bf5]" : "hover:bg-[#1c2128]"}
+            `}
           >
             <div className="flex items-baseline justify-between gap-2 mb-1">
               <span className="text-[12px] font-medium text-[#adbac7] truncate flex items-center gap-1.5">

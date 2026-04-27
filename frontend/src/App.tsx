@@ -86,6 +86,7 @@ export default function App() {
     <div className="h-full w-full relative" style={{ background: "#0d1117" }}>
       <Map
         events={events}
+        selectedEvent={selectedEvent}
         onEventClick={handleEventClick}
       />
 
@@ -102,6 +103,7 @@ export default function App() {
               results={transcriptResults}
               query={searchQuery}
               events={events}
+              selectedTranscript={selectedTranscript}
               onSelect={handleTranscriptSelect}
             />
           )}
