@@ -26,31 +26,31 @@ export async function fetchEvents(
   search?: string,
 ): Promise<ScannerEvent[]> {
   let sql =
-    `SELECT feed_id, archive_ts, event_ts, raw_location, normalized, ` +
-    `latitude, longitude, confidence, context, tags ` +
-    `FROM blotter.scanner_events ` +
-    `WHERE event_ts BETWEEN fromUnixTimestamp(${startTs}) AND fromUnixTimestamp(${endTs})`;
+    `SELECT e.feed_id, e.archive_ts, e.event_ts, e.raw_location, e.normalized, ` +
+    `e.latitude, e.longitude, e.confidence, e.context, e.tags ` +
+    `FROM blotter.scanner_events e ` +
+    `WHERE e.event_ts BETWEEN fromUnixTimestamp(${startTs}) AND fromUnixTimestamp(${endTs})`;
 
   if (bounds) {
     sql +=
-      ` AND longitude BETWEEN ${bounds.west} AND ${bounds.east}` +
-      ` AND latitude BETWEEN ${bounds.south} AND ${bounds.north}`;
+      ` AND e.longitude BETWEEN ${bounds.west} AND ${bounds.east}` +
+      ` AND e.latitude BETWEEN ${bounds.south} AND ${bounds.north}`;
   }
 
   if (search) {
     const escaped = search.replace(/'/g, "\\'").replace(/%/g, "\\%").replace(/_/g, "\\_");
     sql +=
-      ` AND (context ILIKE '%${escaped}%'` +
-      ` OR normalized ILIKE '%${escaped}%'` +
-      ` OR raw_location ILIKE '%${escaped}%'` +
-      ` OR tags ILIKE '%${escaped}%'` +
+      ` AND (e.context ILIKE '%${escaped}%'` +
+      ` OR e.normalized ILIKE '%${escaped}%'` +
+      ` OR e.raw_location ILIKE '%${escaped}%'` +
+      ` OR e.tags ILIKE '%${escaped}%'` +
       ` OR EXISTS (SELECT 1 FROM blotter.scanner_transcripts t` +
-      ` WHERE t.feed_id = feed_id` +
-      ` AND abs(toInt64(t.archive_ts) - toInt64(toDateTime64(archive_ts, 3))) < 120` +
+      ` WHERE t.feed_id = e.feed_id` +
+      ` AND abs(toInt64(t.archive_ts) - toInt64(toDateTime64(e.archive_ts, 3))) < 120` +
       ` AND (t.transcript ILIKE '%${escaped}%' OR t.tags ILIKE '%${escaped}%')))`;
   }
 
-  sql += ` ORDER BY event_ts DESC LIMIT 5000`;
+  sql += ` ORDER BY e.event_ts DESC LIMIT 5000`;
   return query<ScannerEvent>(sql);
 }
 
