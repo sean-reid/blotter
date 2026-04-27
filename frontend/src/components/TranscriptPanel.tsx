@@ -1,10 +1,12 @@
 import { useState } from "react";
-import type { TranscriptResult, TranscriptSegment } from "../lib/types";
+import type { ScannerEvent, TranscriptResult, TranscriptSegment } from "../lib/types";
 import Tags from "./Tags";
 import TranscriptPlayer from "./TranscriptPlayer";
 
 interface Props {
   transcript: TranscriptResult;
+  event?: ScannerEvent | null;
+  searchQuery?: string;
   onClose: () => void;
 }
 
@@ -36,7 +38,7 @@ function parseSegments(raw: string): TranscriptSegment[] {
   }
 }
 
-export default function TranscriptPanel({ transcript, onClose }: Props) {
+export default function TranscriptPanel({ transcript, event, searchQuery, onClose }: Props) {
   const [visible] = useState(true);
   const tags = transcript.tags;
   const segments = parseSegments(transcript.segments);
@@ -112,6 +114,15 @@ export default function TranscriptPanel({ transcript, onClose }: Props) {
             </div>
           </div>
 
+          {event?.normalized && (
+            <div>
+              <FieldLabel>Location</FieldLabel>
+              <div className="text-sm text-[#adbac7]">
+                {event.normalized}
+              </div>
+            </div>
+          )}
+
           {tags && (
             <div>
               <FieldLabel>Codes</FieldLabel>
@@ -125,6 +136,7 @@ export default function TranscriptPanel({ transcript, onClose }: Props) {
               audioUrl={transcript.audio_url}
               segments={segments}
               context={context}
+              searchQuery={searchQuery}
             />
           </div>
 

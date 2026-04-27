@@ -146,6 +146,8 @@ export default function App() {
       {selectedTranscript && (
         <TranscriptPanel
           transcript={selectedTranscript}
+          event={selectedEvent}
+          searchQuery={searchQuery}
           onClose={handleClosePanel}
         />
       )}

@@ -5,6 +5,7 @@ interface Props {
   audioUrl: string;
   segments: TranscriptSegment[];
   context?: string;
+  searchQuery?: string;
 }
 
 function formatTime(seconds: number): string {
@@ -15,7 +16,49 @@ function formatTime(seconds: number): string {
 
 const CONTEXT_PAD = 10;
 
-function findContextRange(
+function findRangeByQuery(
+  segments: TranscriptSegment[],
+  query: string,
+): { startTime: number; endTime: number; startIdx: number; endIdx: number } | null {
+  if (!segments.length || !query) return null;
+
+  const queryLower = query.toLowerCase().trim();
+  if (!queryLower) return null;
+
+  let matchIdx = -1;
+  for (let i = 0; i < segments.length; i++) {
+    if (segments[i]!.text.toLowerCase().includes(queryLower)) {
+      matchIdx = i;
+      break;
+    }
+  }
+
+  if (matchIdx === -1) {
+    const queryWords = queryLower.split(/\s+/);
+    if (queryWords.length > 1) {
+      for (let i = 0; i < segments.length; i++) {
+        const segLower = segments[i]!.text.toLowerCase();
+        if (queryWords.every((w) => segLower.includes(w))) {
+          matchIdx = i;
+          break;
+        }
+      }
+    }
+  }
+
+  if (matchIdx === -1) return null;
+
+  const padStart = Math.max(0, matchIdx - 2);
+  const padEnd = Math.min(segments.length - 1, matchIdx + 3);
+  return {
+    startTime: Math.max(0, segments[padStart]!.start - CONTEXT_PAD),
+    endTime: segments[padEnd]!.end + CONTEXT_PAD,
+    startIdx: padStart,
+    endIdx: padEnd,
+  };
+}
+
+function findRangeByContext(
   segments: TranscriptSegment[],
   context: string,
 ): { startTime: number; endTime: number; startIdx: number; endIdx: number } | null {
@@ -44,7 +87,6 @@ function findContextRange(
     matchStart = pos;
     matchEnd = pos + searchStr.length;
   } else {
-    const half = Math.floor(contextWords.length / 2);
     for (let len = contextWords.length; len >= Math.min(4, contextWords.length); len--) {
       const sub = contextWords.slice(0, len).join(" ");
       const p = fullText.indexOf(sub);
@@ -55,6 +97,7 @@ function findContextRange(
       }
     }
     if (matchStart === -1) {
+      const half = Math.floor(contextWords.length / 2);
       for (let len = half; len >= Math.min(4, contextWords.length); len--) {
         const sub = contextWords.slice(-len).join(" ");
         const p = fullText.indexOf(sub);
@@ -112,7 +155,7 @@ function findContextRange(
   };
 }
 
-export default function TranscriptPlayer({ audioUrl, segments, context }: Props) {
+export default function TranscriptPlayer({ audioUrl, segments, context, searchQuery }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -121,7 +164,10 @@ export default function TranscriptPlayer({ audioUrl, segments, context }: Props)
   const [ready, setReady] = useState(false);
   const [audioDuration, setAudioDuration] = useState(0);
 
-  const range = context ? findContextRange(segments, context) : null;
+  const range =
+    (searchQuery ? findRangeByQuery(segments, searchQuery) : null)
+    ?? (context ? findRangeByContext(segments, context) : null);
+
   const startTime = range?.startTime ?? 0;
   const endTime = range
     ? (audioDuration > 0 ? Math.min(range.endTime, audioDuration) : range.endTime)
