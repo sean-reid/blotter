@@ -76,10 +76,10 @@ export default function Map({ events, onEventClick }: Props) {
       pitchWithRotate={false}
       cursor="default"
     >
-      <NavigationControl position="top-right" showCompass={false} />
+      <NavigationControl position="bottom-right" showCompass={false} />
 
       {events.length > 0 && (
-        <div className="maplibregl-ctrl maplibregl-ctrl-group absolute right-[10px] top-[78px] z-10">
+        <div className="maplibregl-ctrl maplibregl-ctrl-group absolute right-[10px] bottom-[50px] z-10">
           <button
             onClick={fitAll}
             title="Fit all events"

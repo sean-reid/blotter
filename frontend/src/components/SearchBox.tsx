@@ -138,7 +138,7 @@ export default function SearchBox({
 
         {!query && !focused && (
           <span
-            className="absolute left-9 top-1/2 -translate-y-1/2 text-sm text-[#545d68] pointer-events-none select-none transition-opacity duration-300"
+            className="absolute left-9 top-1/2 -translate-y-1/2 text-[16px] sm:text-sm text-[#545d68] pointer-events-none select-none transition-opacity duration-300"
             style={{ opacity: phVisible ? 1 : 0 }}
           >
             {PLACEHOLDERS[phIdx]}
@@ -154,7 +154,7 @@ export default function SearchBox({
           placeholder={focused ? "Search dispatch audio..." : ""}
           className="
             w-full pl-9 pr-9 py-2.5
-            text-sm text-[#e6edf3] placeholder-[#545d68]
+            text-[16px] sm:text-sm text-[#e6edf3] placeholder-[#545d68]
             bg-transparent
             rounded-lg border-0
             focus:outline-none
