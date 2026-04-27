@@ -1,6 +1,6 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import { LngLatBounds } from "maplibre-gl";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import MapGL, {
   Layer,
   type MapRef,
@@ -21,7 +21,10 @@ interface Props {
   onEventClick?: (event: ScannerEvent) => void;
 }
 
-function eventsToGeoJSON(events: ScannerEvent[]): GeoJSON.FeatureCollection {
+function eventsToGeoJSON(
+  events: ScannerEvent[],
+  selected?: ScannerEvent | null,
+): GeoJSON.FeatureCollection {
   return {
     type: "FeatureCollection",
     features: events.map((e) => ({
@@ -35,54 +38,19 @@ function eventsToGeoJSON(events: ScannerEvent[]): GeoJSON.FeatureCollection {
         event_ts: e.event_ts,
         normalized: e.normalized,
         confidence: e.confidence,
+        _selected:
+          selected &&
+          e.feed_id === selected.feed_id &&
+          e.event_ts === selected.event_ts
+            ? 1
+            : 0,
       },
     })),
   };
 }
 
-function selectedToGeoJSON(event: ScannerEvent | null | undefined): GeoJSON.FeatureCollection {
-  if (!event) return { type: "FeatureCollection", features: [] };
-  return {
-    type: "FeatureCollection",
-    features: [{
-      type: "Feature",
-      geometry: { type: "Point", coordinates: [event.longitude, event.latitude] },
-      properties: {},
-    }],
-  };
-}
-
 export default function Map({ events, selectedEvent, onEventClick }: Props) {
   const mapRef = useRef<MapRef>(null);
-  const [ringVisible, setRingVisible] = useState(false);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !selectedEvent) {
-      setRingVisible(false);
-      return;
-    }
-
-    const check = () => {
-      const pixel = map.project([selectedEvent.longitude, selectedEvent.latitude]);
-      const features = map.queryRenderedFeatures(
-        [[pixel.x - 4, pixel.y - 4], [pixel.x + 4, pixel.y + 4]],
-        { layers: ["events-unclustered"] },
-      );
-      setRingVisible(
-        features.some((f) => f.properties?.event_ts === selectedEvent.event_ts),
-      );
-    };
-
-    map.on("zoom", check);
-    map.on("move", check);
-    const timer = setTimeout(check, 150);
-    return () => {
-      map.off("zoom", check);
-      map.off("move", check);
-      clearTimeout(timer);
-    };
-  }, [selectedEvent]);
 
   const fitAll = useCallback(() => {
     const map = mapRef.current;
@@ -163,7 +131,7 @@ export default function Map({ events, selectedEvent, onEventClick }: Props) {
       <Source
         id="events"
         type="geojson"
-        data={eventsToGeoJSON(events)}
+        data={eventsToGeoJSON(events, selectedEvent)}
         cluster={true}
         clusterMaxZoom={14}
         clusterRadius={50}
@@ -224,12 +192,10 @@ export default function Map({ events, selectedEvent, onEventClick }: Props) {
           }}
         />
 
-      </Source>
-
-      <Source id="selected" type="geojson" data={selectedToGeoJSON(ringVisible ? selectedEvent : null)}>
         <Layer
           id="selected-ring"
           type="circle"
+          filter={["all", ["!", ["has", "point_count"]], ["==", ["get", "_selected"], 1]]}
           paint={{
             "circle-radius": 12,
             "circle-color": "transparent",
@@ -237,6 +203,7 @@ export default function Map({ events, selectedEvent, onEventClick }: Props) {
             "circle-stroke-color": "#539bf5",
           }}
         />
+
       </Source>
     </MapGL>
   );
