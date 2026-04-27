@@ -30,6 +30,7 @@ SKIP_NAMES = {
     "front desk", "front", "desk", "system", "radio", "channel",
     "cash back", "insurance", "commercial", "campus",
     "wood", "james", "beach", "garden", "park", "hill",
+    "freeway", "highway", "interstate", "onramp", "offramp", "off-ramp", "on-ramp",
 }
 
 STREET_SUFFIX_RE = re.compile(
@@ -43,11 +44,21 @@ CODE_PATTERN_RE = re.compile(
     re.IGNORECASE,
 )
 
+FREEWAY_RE = re.compile(
+    r"^(?:the\s+)?\d+\s*(?:freeway|fwy)?\s*(?:north|south|east|west|northbound|southbound|eastbound|westbound|nb|sb|eb|wb)$"
+    r"|^(?:the\s+)?\d+\s+(?:freeway|fwy)$"
+    r"|^(?:i-?\d+|us-?\d+|sr-?\d+|ca-?\d+|hwy\s*\d+)\s*(?:north|south|east|west|northbound|southbound|eastbound|westbound|nb|sb|eb|wb)?$"
+    r"|^freeway\s+(?:north|south|east|west)$",
+    re.IGNORECASE,
+)
+
 
 def _is_plausible_location(name: str) -> bool:
     if CODE_PATTERN_RE.match(name):
         return False
     if name.isdigit():
+        return False
+    if FREEWAY_RE.match(name):
         return False
     words = name.split()
     if len(words) == 1 and not STREET_SUFFIX_RE.search(name):
