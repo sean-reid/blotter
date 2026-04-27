@@ -15,6 +15,20 @@ MIN_SALIENCE = 0.03
 
 JUNCTION_RE = re.compile(r"\band\b|\bat\b|&|/|,", re.IGNORECASE)
 
+_CALLSIGN_NAMES = (
+    "adam", "boy", "charles", "david", "edward", "frank", "george",
+    "henry", "ida", "john", "king", "lincoln", "mary", "nora",
+    "ocean", "paul", "queen", "robert", "sam", "tom", "union",
+    "victor", "william", "x-ray", "xray", "young", "zebra",
+)
+_callsign_alt = "|".join(re.escape(n) for n in _CALLSIGN_NAMES)
+UNIT_CALLSIGN_RE = re.compile(
+    rf"\b\d{{1,3}}\s*-?\s*(?:{_callsign_alt})\s*-?\s*\d{{1,3}}\b"
+    rf"|\b\d{{1,3}}\s*-?\s*(?:{_callsign_alt})\b"
+    rf"|\b(?:{_callsign_alt})\s+\d{{1,3}}\b",
+    re.IGNORECASE,
+)
+
 SKIP_NAMES = {
     "location", "area", "block", "scene", "route", "unit", "dispatch",
     "suspect", "victim", "male", "female", "supervisor", "officer",
@@ -167,6 +181,8 @@ def extract_entities(text: str, config: GoogleNLPConfig) -> list[ExtractedLocati
     cleaned = strip_ads(text)
     if not cleaned or not config.api_key:
         return []
+
+    cleaned = UNIT_CALLSIGN_RE.sub("", cleaned)
 
     try:
         entities = _call_nlp(cleaned, config.api_key)

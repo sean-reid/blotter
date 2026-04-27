@@ -114,11 +114,6 @@ export default function TranscriptPanel({ transcript, onClose }: Props) {
               <div className="text-sm font-medium text-[#e6edf3] leading-snug">
                 {event.normalized}
               </div>
-              {event.raw_location !== event.normalized && (
-                <div className="text-xs text-[#545d68] mt-0.5">
-                  {event.raw_location}
-                </div>
-              )}
               <div className="text-[11px] text-[#545d68] tabular-nums font-mono mt-1">
                 {event.latitude.toFixed(5)}, {event.longitude.toFixed(5)}
               </div>
