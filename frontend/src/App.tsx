@@ -5,7 +5,7 @@ import Map from "./components/Map";
 import SearchBox from "./components/SearchBox";
 import TranscriptList from "./components/TranscriptList";
 import TranscriptPanel from "./components/TranscriptPanel";
-import { fetchEvents, searchTranscripts } from "./lib/api";
+import { fetchEventForTranscript, fetchEvents, searchTranscripts } from "./lib/api";
 import type { ScannerEvent, TimeRange, TranscriptResult } from "./lib/types";
 
 const POLL_INTERVAL = 15_000;
@@ -87,10 +87,23 @@ export default function App() {
     setSelectedTranscript(null);
   }, []);
 
-  const handleTranscriptSelect = useCallback((result: TranscriptResult) => {
+  const handleTranscriptSelect = useCallback(async (result: TranscriptResult) => {
+    const local = findEventForTranscript(result);
+    if (local) {
+      setSelectedEvent(local);
+      setSelectedTranscript(null);
+      return;
+    }
+    try {
+      const remote = await fetchEventForTranscript(result.feed_id, result.archive_ts);
+      if (remote) {
+        setSelectedEvent(remote);
+        setSelectedTranscript(null);
+        return;
+      }
+    } catch {}
     setSelectedTranscript(result);
-    const matchedEvent = findEventForTranscript(result);
-    setSelectedEvent(matchedEvent);
+    setSelectedEvent(null);
   }, [findEventForTranscript]);
 
   const handleClosePanel = useCallback(() => {
