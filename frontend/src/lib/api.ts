@@ -43,7 +43,11 @@ export async function fetchEvents(
       ` AND (context ILIKE '%${escaped}%'` +
       ` OR normalized ILIKE '%${escaped}%'` +
       ` OR raw_location ILIKE '%${escaped}%'` +
-      ` OR tags ILIKE '%${escaped}%')`;
+      ` OR tags ILIKE '%${escaped}%'` +
+      ` OR EXISTS (SELECT 1 FROM blotter.scanner_transcripts t` +
+      ` WHERE t.feed_id = feed_id` +
+      ` AND abs(toInt64(t.archive_ts) - toInt64(toDateTime64(archive_ts, 3))) < 120` +
+      ` AND (t.transcript ILIKE '%${escaped}%' OR t.tags ILIKE '%${escaped}%')))`;
   }
 
   sql += ` ORDER BY event_ts DESC LIMIT 5000`;
