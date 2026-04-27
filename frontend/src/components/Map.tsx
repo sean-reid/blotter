@@ -199,6 +199,17 @@ export default function Map({ events, selectedEvent, onEventClick }: Props) {
 
       <Source id="selected" type="geojson" data={selectedToGeoJSON(selectedEvent)}>
         <Layer
+          id="selected-dot"
+          type="circle"
+          paint={{
+            "circle-color": "#e5534b",
+            "circle-radius": 5,
+            "circle-stroke-width": 1,
+            "circle-stroke-color": "rgba(229, 83, 75, 0.25)",
+            "circle-opacity": 0.9,
+          }}
+        />
+        <Layer
           id="selected-ring"
           type="circle"
           minzoom={13}

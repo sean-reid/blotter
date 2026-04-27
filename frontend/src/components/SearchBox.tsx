@@ -100,6 +100,8 @@ export default function SearchBox({
     setActiveRange(null);
     onInputChange?.("");
     onSearch("");
+    const now = Math.floor(Date.now() / 1000);
+    onTimeRangeChange({ start: now - 21600, end: now });
   };
 
   return (
