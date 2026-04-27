@@ -49,6 +49,8 @@ export default function SearchBox({
   const [phIdx, setPhIdx] = useState(0);
   const [phVisible, setPhVisible] = useState(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const callbacksRef = useRef({ onTimeRangeChange, onSearch });
+  callbacksRef.current = { onTimeRangeChange, onSearch };
 
   useEffect(() => {
     if (query || focused) return;
@@ -69,13 +71,13 @@ export default function SearchBox({
     const id = setInterval(() => {
       const { cleanQuery, timeRange: fresh } = parseTimeFilter(query);
       if (fresh) {
-        onTimeRangeChange(fresh);
+        callbacksRef.current.onTimeRangeChange(fresh);
         setActiveRange(fresh);
-        onSearch(cleanQuery.trim());
+        callbacksRef.current.onSearch(cleanQuery.trim());
       }
-    }, 30_000);
+    }, 10_000);
     return () => clearInterval(id);
-  }, [query, onTimeRangeChange, onSearch]);
+  }, [query]);
 
   const handleChange = useCallback((value: string) => {
     setQuery(value);
