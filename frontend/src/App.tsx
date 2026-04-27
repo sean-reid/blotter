@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AboutModal from "./components/AboutModal";
 import EventPanel from "./components/EventPanel";
 import Map from "./components/Map";
@@ -101,10 +101,19 @@ export default function App() {
     setSelectedTranscript(null);
   }, []);
 
+  const eventsForMap = useMemo(() => {
+    if (!selectedEvent) return events;
+    const exists = events.some(
+      (e) => e.feed_id === selectedEvent.feed_id && e.event_ts === selectedEvent.event_ts,
+    );
+    if (exists) return events;
+    return [...events, selectedEvent];
+  }, [events, selectedEvent]);
+
   return (
     <div className="h-full w-full relative" style={{ background: "#0d1117" }}>
       <Map
-        events={events}
+        events={eventsForMap}
         selectedEvent={selectedEvent}
         onEventClick={handleEventClick}
       />

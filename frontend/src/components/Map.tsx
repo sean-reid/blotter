@@ -1,6 +1,6 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import { LngLatBounds } from "maplibre-gl";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import MapGL, {
   Layer,
   type MapRef,
@@ -54,6 +54,35 @@ function selectedToGeoJSON(event: ScannerEvent | null | undefined): GeoJSON.Feat
 
 export default function Map({ events, selectedEvent, onEventClick }: Props) {
   const mapRef = useRef<MapRef>(null);
+  const [ringVisible, setRingVisible] = useState(false);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !selectedEvent) {
+      setRingVisible(false);
+      return;
+    }
+
+    const check = () => {
+      const pixel = map.project([selectedEvent.longitude, selectedEvent.latitude]);
+      const features = map.queryRenderedFeatures(
+        [[pixel.x - 4, pixel.y - 4], [pixel.x + 4, pixel.y + 4]],
+        { layers: ["events-unclustered"] },
+      );
+      setRingVisible(
+        features.some((f) => f.properties?.event_ts === selectedEvent.event_ts),
+      );
+    };
+
+    map.on("zoomend", check);
+    map.on("moveend", check);
+    const timer = setTimeout(check, 150);
+    return () => {
+      map.off("zoomend", check);
+      map.off("moveend", check);
+      clearTimeout(timer);
+    };
+  }, [selectedEvent]);
 
   const fitAll = useCallback(() => {
     const map = mapRef.current;
@@ -197,18 +226,7 @@ export default function Map({ events, selectedEvent, onEventClick }: Props) {
 
       </Source>
 
-      <Source id="selected" type="geojson" data={selectedToGeoJSON(selectedEvent)}>
-        <Layer
-          id="selected-dot"
-          type="circle"
-          paint={{
-            "circle-color": "#e5534b",
-            "circle-radius": 5,
-            "circle-stroke-width": 1,
-            "circle-stroke-color": "rgba(229, 83, 75, 0.25)",
-            "circle-opacity": 0.9,
-          }}
-        />
+      <Source id="selected" type="geojson" data={selectedToGeoJSON(ringVisible ? selectedEvent : null)}>
         <Layer
           id="selected-ring"
           type="circle"
