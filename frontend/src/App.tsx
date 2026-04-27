@@ -107,11 +107,11 @@ export default function App() {
             onInputChange={setRawInput}
             onAbout={() => setAboutOpen(true)}
           />
-          {rawInput.trim() && (transcriptResults.length > 0 || (searchQuery && events.length > 0)) && (
+          {rawInput.trim() && (transcriptResults.length > 0 || events.length > 0) && (
             <TranscriptList
               results={transcriptResults}
               query={searchQuery}
-              matchedEvents={searchQuery ? events : []}
+              matchedEvents={events}
               selectedTranscript={selectedTranscript}
               selectedEvent={selectedEvent}
               onSelectTranscript={handleTranscriptSelect}

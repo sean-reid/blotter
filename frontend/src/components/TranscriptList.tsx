@@ -59,7 +59,7 @@ export default function TranscriptList({
         {matchedEvents.length > 0 && (
           <>
             <SectionHeader>Events ({matchedEvents.length})</SectionHeader>
-            {matchedEvents.map((e) => {
+            {matchedEvents.slice(0, 50).map((e) => {
               const isSelected = selectedEvent
                 && e.feed_id === selectedEvent.feed_id
                 && e.event_ts === selectedEvent.event_ts;
