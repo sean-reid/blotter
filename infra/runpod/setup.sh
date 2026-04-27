@@ -34,15 +34,41 @@ if ! command -v uv &>/dev/null; then
 fi
 echo "[OK] uv"
 
+# Install supervisord (pip — available everywhere, no apt version issues)
+pip install supervisor -q 2>/dev/null || pip3 install supervisor -q
+echo "[OK] supervisord"
+
 # Persistent ClickHouse data on network volume
 mkdir -p /workspace/clickhouse-data /workspace/clickhouse-logs
 [ -L /var/lib/clickhouse ] || (rm -rf /var/lib/clickhouse && ln -sf /workspace/clickhouse-data /var/lib/clickhouse)
 [ -L /var/log/clickhouse-server ] || (rm -rf /var/log/clickhouse-server && ln -sf /workspace/clickhouse-logs /var/log/clickhouse-server)
 
-# Start services
-redis-server --daemonize yes
-clickhouse-server --daemon 2>/dev/null || true
+# Clone/update repo
+if [ -d "$REPO_DIR" ]; then
+  cd "$REPO_DIR" && git pull 2>/dev/null
+else
+  git clone https://github.com/sean-reid/blotter.git "$REPO_DIR"
+fi
+echo "[OK] Repo"
 
+# Install/sync Python backend
+cd "$REPO_DIR/backend"
+uv sync 2>/dev/null
+echo "[OK] Python packages"
+
+# Kill any leftover processes from previous runs
+supervisorctl -c "$REPO_DIR/infra/supervisord/supervisord.conf" shutdown 2>/dev/null || true
+pkill -f supervisord 2>/dev/null || true
+pkill redis-server 2>/dev/null || true
+pkill clickhouse-server 2>/dev/null || true
+pkill cloudflared 2>/dev/null || true
+sleep 1
+
+# Start supervisord (runs in foreground via nodaemon=true, so background it)
+supervisord -c "$REPO_DIR/infra/supervisord/supervisord.conf" &
+echo "[OK] supervisord started"
+
+# Wait for ClickHouse to be ready before running schema init
 echo -n "Waiting for ClickHouse"
 for i in $(seq 1 30); do
   if curl -s http://localhost:8123/ping > /dev/null 2>&1; then
@@ -53,34 +79,20 @@ for i in $(seq 1 30); do
   echo -n "."
 done
 
-# Clone/update repo
-if [ -d "$REPO_DIR" ]; then
-  cd "$REPO_DIR" && git pull 2>/dev/null
-else
-  git clone https://github.com/sean-reid/blotter.git "$REPO_DIR"
-fi
-echo "[OK] Repo"
-
 # Init schema (idempotent)
 clickhouse-client --multiquery < "$REPO_DIR/infra/clickhouse/init.sql" 2>/dev/null
 echo "[OK] Schema"
 
-# Start cloudflared tunnel with auto-restart loop
-if [ -f "$REPO_DIR/infra/cloudflared/credentials.json" ]; then
-  nohup bash -c 'while true; do cloudflared tunnel --config '"$REPO_DIR"'/infra/cloudflared/config.yml run 2>&1; echo "cloudflared exited, restarting in 5s..."; sleep 5; done' &>/var/log/cloudflared.log &
-  echo "[OK] Tunnel"
-else
+# Check tunnel credentials
+if [ ! -f "$REPO_DIR/infra/cloudflared/credentials.json" ]; then
   echo "[WARN] No tunnel credentials — copy credentials.json to infra/cloudflared/"
 fi
 
-# Install/sync Python backend
-cd "$REPO_DIR/backend"
-uv sync 2>/dev/null
-echo "[OK] Python packages"
-
-# Start pipeline with auto-restart loop
-nohup bash -c 'export PATH="$HOME/.local/bin:$PATH" && export GOOGLE_APPLICATION_CREDENTIALS=/workspace/blotter-gcs-key.json && cd /workspace/blotter/backend && while true; do uv run blotter stream start 2>&1; echo "Pipeline exited, restarting in 10s..."; sleep 10; done' &>/var/log/blotter-pipeline.log &
-echo "[OK] Pipeline started"
-
 echo ""
 echo "=== Blotter running at $(date) ==="
+echo ""
+echo "Management commands:"
+echo "  supervisorctl -c $REPO_DIR/infra/supervisord/supervisord.conf status"
+echo "  supervisorctl -c $REPO_DIR/infra/supervisord/supervisord.conf restart pipeline"
+echo "  supervisorctl -c $REPO_DIR/infra/supervisord/supervisord.conf restart all"
+echo "  supervisorctl -c $REPO_DIR/infra/supervisord/supervisord.conf tail -f pipeline"
