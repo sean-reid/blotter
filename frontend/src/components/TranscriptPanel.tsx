@@ -60,7 +60,7 @@ export default function TranscriptPanel({ transcript, event, searchQuery, onClos
 
   const onTouchEnd = useCallback(() => {
     dragging.current = false;
-    if (dragY > 100) {
+    if (dragY > 60) {
       onClose();
     }
     setDragY(0);
@@ -102,7 +102,7 @@ export default function TranscriptPanel({ transcript, event, searchQuery, onClos
         }}
       >
         <div
-          className="md:hidden flex justify-center pt-3 pb-1 cursor-grab active:cursor-grabbing"
+          className="md:hidden flex justify-center pt-2 pb-3 cursor-grab active:cursor-grabbing"
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
@@ -110,7 +110,12 @@ export default function TranscriptPanel({ transcript, event, searchQuery, onClos
           <div className="w-10 h-1 rounded-full bg-[#3d444d]" />
         </div>
 
-        <div className="shrink-0 border-b border-[#2d333b] px-4 py-3 flex justify-between items-center">
+        <div
+          className="shrink-0 border-b border-[#2d333b] px-4 py-3 flex justify-between items-center"
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
           <h3 className="font-medium text-sm text-[#e6edf3]">Transcript</h3>
           <button
             onClick={onClose}
