@@ -51,6 +51,31 @@ export function parseTimeFilter(input: string): ParseResult {
     );
   }
 
+  const thisWeekMatch = input.match(/\bthis\s+week\b/i);
+  if (thisWeekMatch) {
+    const d = new Date();
+    const day = d.getDay();
+    const diff = day === 0 ? 6 : day - 1;
+    const monday = new Date(d);
+    monday.setDate(d.getDate() - diff);
+    monday.setHours(0, 0, 0, 0);
+    return check(
+      { start: Math.floor(monday.getTime() / 1000), end: now },
+      strip(input, thisWeekMatch[0]),
+    );
+  }
+
+  const thisMonthMatch = input.match(/\bthis\s+month\b/i);
+  if (thisMonthMatch) {
+    const first = new Date();
+    first.setDate(1);
+    first.setHours(0, 0, 0, 0);
+    return check(
+      { start: Math.floor(first.getTime() / 1000), end: now },
+      strip(input, thisMonthMatch[0]),
+    );
+  }
+
   const morningMatch = input.match(/\bthis\s+morning\b/i);
   if (morningMatch) {
     const sixAm = new Date();
