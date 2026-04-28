@@ -119,6 +119,24 @@ export default function AboutModal({ open, onClose }: Props) {
             </p>
           </div>
 
+          <div>
+            <h3 className="text-[11px] font-medium uppercase tracking-wider text-[#545d68] mb-1.5">
+              Support
+            </h3>
+            <p>
+              Blotter is a free, independent project. If you find it useful,
+              consider helping keep it running.
+            </p>
+            <a
+              href="https://www.buymeacoffee.com/seanreid"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 mt-2 text-[#d4943a] hover:text-[#e0a550] underline underline-offset-2 transition-colors"
+            >
+              Buy me a coffee
+            </a>
+          </div>
+
           <p className="text-[11px] text-[#545d68] border-t border-[#2d333b] pt-3">
             Locations are automatically extracted from audio transcriptions and
             may not be accurate. This tool is for informational purposes only.
