@@ -80,12 +80,25 @@ export default function Map({ events, selectedEvent, onEventClick }: Props) {
 
   const handleClick = useCallback(
     (e: maplibregl.MapLayerMouseEvent) => {
+      const map = mapRef.current;
+      if (!map) return;
+
+      const clusterFeatures = map.queryRenderedFeatures(e.point, { layers: ["events-clusters"] });
+      if (clusterFeatures.length > 0) {
+        const cluster = clusterFeatures[0]!;
+        const coords = (cluster.geometry as GeoJSON.Point).coordinates as [number, number];
+        const currentZoom = map.getZoom();
+        map.flyTo({ center: coords, zoom: currentZoom + 2, duration: 500 });
+        return;
+      }
+
       if (!onEventClick) return;
-      if (!e.features?.length) {
+      const hitFeatures = map.queryRenderedFeatures(e.point, { layers: ["events-hit-area", "events-unclustered"] });
+      if (!hitFeatures.length) {
         onEventClick(null);
         return;
       }
-      const props = e.features[0]?.properties;
+      const props = hitFeatures[0]?.properties;
       if (!props) return;
       const event = events.find(
         (ev) =>
@@ -106,7 +119,7 @@ export default function Map({ events, selectedEvent, onEventClick }: Props) {
       style={{ width: "100%", height: "100%" }}
       mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
       onClick={handleClick}
-      interactiveLayerIds={["events-unclustered"]}
+      interactiveLayerIds={["events-unclustered", "events-hit-area", "events-clusters"]}
       pitchWithRotate={false}
       cursor="default"
     >
@@ -185,12 +198,22 @@ export default function Map({ events, selectedEvent, onEventClick }: Props) {
         />
 
         <Layer
+          id="events-hit-area"
+          type="circle"
+          filter={["!", ["has", "point_count"]]}
+          paint={{
+            "circle-color": "transparent",
+            "circle-radius": 20,
+          }}
+        />
+
+        <Layer
           id="events-unclustered"
           type="circle"
           filter={["!", ["has", "point_count"]]}
           paint={{
             "circle-color": "#e5534b",
-            "circle-radius": 5,
+            "circle-radius": 6,
             "circle-stroke-width": 1,
             "circle-stroke-color": "rgba(229, 83, 75, 0.25)",
             "circle-opacity": 0.9,

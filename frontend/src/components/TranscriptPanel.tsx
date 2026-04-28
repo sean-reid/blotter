@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { ScannerEvent, TranscriptResult, TranscriptSegment } from "../lib/types";
 import Tags from "./Tags";
 import TranscriptPlayer from "./TranscriptPlayer";
@@ -40,9 +40,31 @@ function parseSegments(raw: string): TranscriptSegment[] {
 
 export default function TranscriptPanel({ transcript, event, searchQuery, onClose }: Props) {
   const [visible] = useState(true);
+  const [dragY, setDragY] = useState(0);
+  const dragStartY = useRef(0);
+  const dragging = useRef(false);
   const tags = transcript.tags;
   const segments = parseSegments(transcript.segments);
   const context = transcript.context || undefined;
+
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    dragStartY.current = e.touches[0]!.clientY;
+    dragging.current = true;
+  }, []);
+
+  const onTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!dragging.current) return;
+    const dy = e.touches[0]!.clientY - dragStartY.current;
+    setDragY(Math.max(0, dy));
+  }, []);
+
+  const onTouchEnd = useCallback(() => {
+    dragging.current = false;
+    if (dragY > 100) {
+      onClose();
+    }
+    setDragY(0);
+  }, [dragY, onClose]);
 
   return (
     <>
@@ -68,16 +90,24 @@ export default function TranscriptPanel({ transcript, event, searchQuery, onClos
           overflow-hidden
           flex flex-col
 
-          transition-transform duration-300
+          ${dragging.current ? "" : "transition-transform duration-300"}
           ${visible
             ? "translate-y-0 md:translate-x-0"
             : "translate-y-full md:translate-y-0 md:translate-x-full"
           }
         `}
-        style={{ transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)" }}
+        style={{
+          transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)",
+          ...(dragY > 0 ? { transform: `translateY(${dragY}px)` } : {}),
+        }}
       >
-        <div className="md:hidden flex justify-center pt-3 pb-1">
-          <div className="w-8 h-0.5 rounded-full bg-[#2d333b]" />
+        <div
+          className="md:hidden flex justify-center pt-3 pb-1 cursor-grab active:cursor-grabbing"
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
+          <div className="w-10 h-1 rounded-full bg-[#3d444d]" />
         </div>
 
         <div className="shrink-0 border-b border-[#2d333b] px-4 py-3 flex justify-between items-center">
