@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ScannerEvent, TranscriptResult, TranscriptSegment } from "../lib/types";
 import Tags from "./Tags";
 import TranscriptPlayer from "./TranscriptPlayer";
@@ -65,6 +65,14 @@ export default function TranscriptPanel({ transcript, event, searchQuery, onClos
     }
     setDragY(0);
   }, [dragY, onClose]);
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onClose]);
 
   return (
     <>

@@ -61,6 +61,15 @@ export default function EventPanel({ event, onClose }: Props) {
     }
   }, [event]);
 
+  useEffect(() => {
+    if (!event) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [event, onClose]);
+
   const onTouchStart = useCallback((e: React.TouchEvent) => {
     dragStartY.current = e.touches[0]!.clientY;
     dragging.current = true;
