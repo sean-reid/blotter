@@ -29,6 +29,16 @@ CREATE TABLE IF NOT EXISTS blotter.scanner_events (
 ) ENGINE = MergeTree()
 ORDER BY (toDate(event_ts), h3_index, event_ts);
 
+CREATE TABLE IF NOT EXISTS blotter.pipeline_metrics (
+    ts       DateTime64(3) DEFAULT now64(3),
+    metric   LowCardinality(String),
+    value    Float64,
+    tags     Map(String, String) DEFAULT map(),
+    message  String DEFAULT ''
+) ENGINE = MergeTree()
+ORDER BY (metric, ts)
+TTL toDateTime(ts) + INTERVAL 30 DAY;
+
 -- Password set via ALTER USER after startup; placeholder for initial creation only
 CREATE USER IF NOT EXISTS blotter_readonly IDENTIFIED BY 'changeme'
 SETTINGS PROFILE 'readonly';

@@ -103,6 +103,12 @@ if [ ! -f "$REPO_DIR/infra/cloudflared/credentials.json" ]; then
   echo "[WARN] No tunnel credentials — copy credentials.json to infra/cloudflared/"
 fi
 
+# Install monitoring crontab
+chmod +x "$REPO_DIR"/infra/monitoring/*.sh
+crontab "$REPO_DIR/infra/monitoring/crontab"
+mkdir -p "$REPO_DIR/infra/monitoring/state"
+echo "[OK] Monitoring crontab"
+
 echo ""
 echo "=== Blotter running at $(date) ==="
 echo ""
