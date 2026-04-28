@@ -4,6 +4,8 @@ Real-time police scanner map for Los Angeles County. Live audio from Broadcastif
 
 **Live at [blotter.fm](https://blotter.fm)**
 
+<a href="https://www.producthunt.com/products/blotter-3?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-blotter-3" target="_blank" rel="noopener noreferrer"><img alt="Blotter - Police radio, mapped in real time | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1133945&amp;theme=light&amp;t=1777351714816"></a>
+
 ## Architecture
 
 ```mermaid
