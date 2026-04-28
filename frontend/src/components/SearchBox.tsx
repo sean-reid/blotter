@@ -209,21 +209,13 @@ export default function SearchBox({
       )}
 
       {activeRange && !rangeTooLarge && (
-        <div className="px-3 pb-2 -mt-0.5 flex items-center justify-between">
+        <div className="px-3 pb-2 -mt-0.5">
           <span className="inline-flex items-center gap-1.5 text-[11px] text-[#539bf5]">
             <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             {formatTimeLabel(activeRange)}
           </span>
-          <a
-            href="https://www.buymeacoffee.com/seanreid"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[10px] text-[#3d444d] hover:text-[#545d68] transition-colors"
-          >
-            Support
-          </a>
         </div>
       )}
     </div>
