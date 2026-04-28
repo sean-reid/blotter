@@ -1,6 +1,7 @@
 #!/bin/bash
 # Track Redis queue depths, alert on transcription backlog
 NTFY_TOPIC=$(cat /workspace/blotter/.ntfy-secret 2>/dev/null)
+[ -f /workspace/blotter/.env.secrets ] && set -a && source /workspace/blotter/.env.secrets && set +a
 REDIS_PASS="${REDIS_PASSWORD:-}"
 
 CAPTURE_DEPTH=$(redis-cli -a "$REDIS_PASS" --no-auth-warning LLEN blotter:capture:chunks 2>/dev/null || echo 0)

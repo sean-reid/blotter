@@ -1,6 +1,7 @@
 #!/bin/bash
 # Ping Redis and ClickHouse, alert if Redis is down
 NTFY_TOPIC=$(cat /workspace/blotter/.ntfy-secret 2>/dev/null)
+[ -f /workspace/blotter/.env.secrets ] && set -a && source /workspace/blotter/.env.secrets && set +a
 REDIS_PASS="${REDIS_PASSWORD:-}"
 
 CH_OK=$(curl -sf http://localhost:8123/ping > /dev/null 2>&1 && echo 1 || echo 0)

@@ -1,19 +1,16 @@
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin
 
-# Load secrets for scripts that need REDIS_PASSWORD
-REDIS_PASSWORD=""
-
 # Tier 1: Critical
 */5 * * * * /workspace/blotter/infra/monitoring/heartbeat.sh
 */2 * * * * /workspace/blotter/infra/monitoring/check_procs.sh
 */5 * * * * /workspace/blotter/infra/monitoring/check_disk.sh
 
 # Tier 2: Debugging/trending
-*/5 * * * * . /workspace/blotter/.env.secrets && /workspace/blotter/infra/monitoring/check_queues.sh
+*/5 * * * * /workspace/blotter/infra/monitoring/check_queues.sh
 */5 * * * * /workspace/blotter/infra/monitoring/check_ffmpeg.sh
 */5 * * * * /workspace/blotter/infra/monitoring/check_resources.sh
-*/2 * * * * . /workspace/blotter/.env.secrets && /workspace/blotter/infra/monitoring/check_services.sh
+*/2 * * * * /workspace/blotter/infra/monitoring/check_services.sh
 0 * * * *   /workspace/blotter/infra/monitoring/check_throughput.sh
 
 # Daily summary at 9am PT

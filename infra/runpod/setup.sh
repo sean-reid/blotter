@@ -16,7 +16,8 @@ echo "=== Blotter RunPod Start ==="
 
 # Install system dependencies
 apt-get update -qq
-apt-get install -y -qq ffmpeg redis-server curl git > /dev/null 2>&1
+apt-get install -y -qq ffmpeg redis-server curl git cron > /dev/null 2>&1
+service cron start 2>/dev/null || true
 echo "[OK] System packages"
 
 # Install ClickHouse
