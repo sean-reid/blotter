@@ -181,7 +181,6 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
   const [audioError, setAudioError] = useState(false);
   const [ready, setReady] = useState(false);
   const [audioDuration, setAudioDuration] = useState(0);
-  const rawBufRef = useRef<ArrayBuffer | null>(null);
 
   const range =
     (searchQuery ? findRangeByQuery(segments, searchQuery) : null)
@@ -252,20 +251,6 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
     rafRef.current = requestAnimationFrame(tick);
   }, [stopSource, tick]);
 
-  const ensureDecoded = useCallback(async () => {
-    if (bufferRef.current) return true;
-    if (!rawBufRef.current) return false;
-    if (!ctxRef.current) {
-      ctxRef.current = new AudioContext();
-    }
-    const ctx = ctxRef.current;
-    if (ctx.state === "suspended") await ctx.resume();
-    const decoded = await ctx.decodeAudioData(rawBufRef.current.slice(0));
-    bufferRef.current = decoded;
-    setAudioDuration(decoded.duration);
-    return true;
-  }, []);
-
   useEffect(() => {
     if (!audioUrl) return;
     let cancelled = false;
@@ -274,7 +259,11 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
     setPlaying(false);
     stopSource();
     bufferRef.current = null;
-    rawBufRef.current = null;
+
+    if (!ctxRef.current) {
+      ctxRef.current = new AudioContext();
+    }
+    const ctx = ctxRef.current;
 
     fetch(audioUrl)
       .then((r) => {
@@ -283,7 +272,12 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
       })
       .then((buf) => {
         if (cancelled) return;
-        rawBufRef.current = buf;
+        return ctx.decodeAudioData(buf);
+      })
+      .then((decoded) => {
+        if (cancelled || !decoded) return;
+        bufferRef.current = decoded;
+        setAudioDuration(decoded.duration);
         setReady(true);
       })
       .catch(() => {
@@ -304,14 +298,13 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
     (s) => currentTime >= s.start && currentTime < s.end,
   );
 
-  const seekTo = useCallback(async (time: number) => {
+  const seekTo = useCallback((time: number) => {
     offsetRef.current = time;
     setCurrentTime(time);
     if (playing) {
-      await ensureDecoded();
       playFrom(time);
     }
-  }, [playing, playFrom, ensureDecoded]);
+  }, [playing, playFrom]);
 
   const togglePlay = useCallback(async () => {
     if (playing) {
@@ -322,7 +315,6 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
       stopSource();
       setPlaying(false);
     } else {
-      if (!(await ensureDecoded())) return;
       let offset = offsetRef.current;
       if (range) {
         if (offset < range.startTime || offset >= range.endTime) {
@@ -334,7 +326,7 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
       }
       playFrom(offset);
     }
-  }, [playing, range, stopSource, playFrom, ensureDecoded]);
+  }, [playing, range, stopSource, playFrom]);
 
   useEffect(() => {
     if (ready && range) {
