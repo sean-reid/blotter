@@ -125,8 +125,17 @@ function findRangeByContext(
       }
     }
     if (best === -1 || bestScore < 2) return null;
-    const padStart = Math.max(0, best - 2);
-    const padEnd = Math.min(segments.length - 1, best + 2);
+    let padStart = best;
+    let padEnd = best;
+    const MAX_GAP = 20;
+    for (let i = best - 1; i >= Math.max(0, best - 2); i--) {
+      if (segments[i + 1]!.start - segments[i]!.end < MAX_GAP) padStart = i;
+      else break;
+    }
+    for (let i = best + 1; i <= Math.min(segments.length - 1, best + 2); i++) {
+      if (segments[i]!.start - segments[i - 1]!.end < MAX_GAP) padEnd = i;
+      else break;
+    }
     return {
       startTime: Math.max(0, segments[padStart]!.start - CONTEXT_PAD),
       endTime: segments[padEnd]!.end + CONTEXT_PAD,
@@ -144,8 +153,11 @@ function findRangeByContext(
     if (segOffsets[i]!.charStart < matchEnd) { endIdx = segOffsets[i]!.idx; break; }
   }
 
-  const padStart = Math.max(0, startIdx - 1);
-  const padEnd = Math.min(segments.length - 1, endIdx + 1);
+  const MAX_GAP = 20;
+  const padStart = (startIdx > 0 && segments[startIdx]!.start - segments[startIdx - 1]!.end < MAX_GAP)
+    ? startIdx - 1 : startIdx;
+  const padEnd = (endIdx < segments.length - 1 && segments[endIdx + 1]!.start - segments[endIdx]!.end < MAX_GAP)
+    ? endIdx + 1 : endIdx;
 
   return {
     startTime: Math.max(0, segments[padStart]!.start - CONTEXT_PAD),
@@ -169,6 +181,7 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
   const [audioError, setAudioError] = useState(false);
   const [ready, setReady] = useState(false);
   const [audioDuration, setAudioDuration] = useState(0);
+  const rawBufRef = useRef<ArrayBuffer | null>(null);
 
   const range =
     (searchQuery ? findRangeByQuery(segments, searchQuery) : null)
@@ -239,6 +252,20 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
     rafRef.current = requestAnimationFrame(tick);
   }, [stopSource, tick]);
 
+  const ensureDecoded = useCallback(async () => {
+    if (bufferRef.current) return true;
+    if (!rawBufRef.current) return false;
+    if (!ctxRef.current) {
+      ctxRef.current = new AudioContext();
+    }
+    const ctx = ctxRef.current;
+    if (ctx.state === "suspended") await ctx.resume();
+    const decoded = await ctx.decodeAudioData(rawBufRef.current.slice(0));
+    bufferRef.current = decoded;
+    setAudioDuration(decoded.duration);
+    return true;
+  }, []);
+
   useEffect(() => {
     if (!audioUrl) return;
     let cancelled = false;
@@ -247,11 +274,7 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
     setPlaying(false);
     stopSource();
     bufferRef.current = null;
-
-    if (!ctxRef.current) {
-      ctxRef.current = new AudioContext();
-    }
-    const ctx = ctxRef.current;
+    rawBufRef.current = null;
 
     fetch(audioUrl)
       .then((r) => {
@@ -260,12 +283,7 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
       })
       .then((buf) => {
         if (cancelled) return;
-        return ctx.decodeAudioData(buf);
-      })
-      .then((decoded) => {
-        if (cancelled || !decoded) return;
-        bufferRef.current = decoded;
-        setAudioDuration(decoded.duration);
+        rawBufRef.current = buf;
         setReady(true);
       })
       .catch(() => {
@@ -286,13 +304,14 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
     (s) => currentTime >= s.start && currentTime < s.end,
   );
 
-  const seekTo = useCallback((time: number) => {
+  const seekTo = useCallback(async (time: number) => {
     offsetRef.current = time;
     setCurrentTime(time);
     if (playing) {
+      await ensureDecoded();
       playFrom(time);
     }
-  }, [playing, playFrom]);
+  }, [playing, playFrom, ensureDecoded]);
 
   const togglePlay = useCallback(async () => {
     if (playing) {
@@ -303,6 +322,7 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
       stopSource();
       setPlaying(false);
     } else {
+      if (!(await ensureDecoded())) return;
       let offset = offsetRef.current;
       if (range) {
         if (offset < range.startTime || offset >= range.endTime) {
@@ -314,7 +334,7 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
       }
       playFrom(offset);
     }
-  }, [playing, range, stopSource, playFrom]);
+  }, [playing, range, stopSource, playFrom, ensureDecoded]);
 
   useEffect(() => {
     if (ready && range) {
@@ -397,7 +417,7 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
               `}
             >
               <span className="text-[10px] tabular-nums text-[#545d68] pt-0.5 shrink-0">
-                {formatTime(seg.start)}
+                {formatTime(seg.start - startTime)}
               </span>
               <span className="text-[12px] leading-relaxed">{seg.text}</span>
             </div>
