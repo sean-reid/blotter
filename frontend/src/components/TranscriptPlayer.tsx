@@ -291,7 +291,7 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
     }
   }, [playing, playFrom]);
 
-  const togglePlay = useCallback(() => {
+  const togglePlay = useCallback(async () => {
     if (playing) {
       const ctx = ctxRef.current;
       if (ctx) {
@@ -305,7 +305,7 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
         offset = range.startTime;
       }
       if (ctxRef.current?.state === "suspended") {
-        ctxRef.current.resume();
+        await ctxRef.current.resume();
       }
       playFrom(offset);
     }
