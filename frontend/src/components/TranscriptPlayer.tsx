@@ -206,9 +206,8 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
   }, []);
 
   const tick = useCallback(() => {
-    const ctx = ctxRef.current;
-    if (!ctx || !sourceRef.current) return;
-    const pos = offsetRef.current + (ctx.currentTime - playStartRef.current);
+    if (!sourceRef.current) return;
+    const pos = offsetRef.current + (performance.now() - playStartRef.current) / 1000;
     setCurrentTime(pos);
     if (range && pos >= range.endTime) {
       stopSource();
@@ -245,7 +244,7 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
     const clampedOffset = Math.max(0, Math.min(offset, buffer.duration));
     sourceRef.current = source;
     offsetRef.current = clampedOffset;
-    playStartRef.current = ctx.currentTime;
+    playStartRef.current = performance.now();
     source.start(0, clampedOffset);
     setPlaying(true);
     rafRef.current = requestAnimationFrame(tick);
@@ -308,10 +307,7 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
 
   const togglePlay = useCallback(async () => {
     if (playing) {
-      const ctx = ctxRef.current;
-      if (ctx) {
-        offsetRef.current += ctx.currentTime - playStartRef.current;
-      }
+      offsetRef.current += (performance.now() - playStartRef.current) / 1000;
       stopSource();
       setPlaying(false);
     } else {
