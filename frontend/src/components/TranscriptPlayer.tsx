@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { TranscriptSegment } from "../lib/types";
 
 interface Props {
@@ -156,41 +156,19 @@ function findRangeByContext(
 }
 
 export default function TranscriptPlayer({ audioUrl, segments, context, searchQuery }: Props) {
-  const audioRef = useRef<HTMLAudioElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
+  const ctxRef = useRef<AudioContext | null>(null);
+  const sourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const bufferRef = useRef<AudioBuffer | null>(null);
+  const playStartRef = useRef(0);
+  const offsetRef = useRef(0);
+  const rafRef = useRef(0);
+
   const [currentTime, setCurrentTime] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [audioError, setAudioError] = useState(false);
   const [ready, setReady] = useState(false);
   const [audioDuration, setAudioDuration] = useState(0);
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!audioUrl) return;
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    setBlobUrl(null);
-    setReady(false);
-    setAudioError(false);
-    fetch(audioUrl)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status}`);
-        return r.arrayBuffer();
-      })
-      .then((buf) => {
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
-        setBlobUrl(objectUrl);
-        queueMicrotask(() => audioRef.current?.load());
-      })
-      .catch(() => {
-        if (!cancelled) setAudioError(true);
-      });
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [audioUrl]);
 
   const range =
     (searchQuery ? findRangeByQuery(segments, searchQuery) : null)
@@ -206,45 +184,96 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
     ? segments.slice(range.startIdx, range.endIdx + 1)
     : segments;
 
+  const stopSource = useCallback(() => {
+    cancelAnimationFrame(rafRef.current);
+    if (sourceRef.current) {
+      try { sourceRef.current.stop(); } catch { /* already stopped */ }
+      sourceRef.current.disconnect();
+      sourceRef.current = null;
+    }
+  }, []);
+
+  const tick = useCallback(() => {
+    const ctx = ctxRef.current;
+    if (!ctx || !sourceRef.current) return;
+    const pos = offsetRef.current + (ctx.currentTime - playStartRef.current);
+    setCurrentTime(pos);
+    if (range && pos >= range.endTime) {
+      stopSource();
+      offsetRef.current = range.endTime;
+      setPlaying(false);
+      return;
+    }
+    if (bufferRef.current && pos >= bufferRef.current.duration) {
+      stopSource();
+      offsetRef.current = bufferRef.current.duration;
+      setPlaying(false);
+      return;
+    }
+    rafRef.current = requestAnimationFrame(tick);
+  }, [range, stopSource]);
+
+  const playFrom = useCallback((offset: number) => {
+    const ctx = ctxRef.current;
+    const buffer = bufferRef.current;
+    if (!ctx || !buffer) return;
+    stopSource();
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.onended = () => {
+      if (sourceRef.current === source) {
+        setPlaying(false);
+        cancelAnimationFrame(rafRef.current);
+      }
+    };
+    const clampedOffset = Math.max(0, Math.min(offset, buffer.duration));
+    sourceRef.current = source;
+    offsetRef.current = clampedOffset;
+    playStartRef.current = ctx.currentTime;
+    source.start(0, clampedOffset);
+    setPlaying(true);
+    rafRef.current = requestAnimationFrame(tick);
+  }, [stopSource, tick]);
+
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
+    if (!audioUrl) return;
+    let cancelled = false;
+    setReady(false);
+    setAudioError(false);
+    setPlaying(false);
+    stopSource();
+    bufferRef.current = null;
 
-    const onTime = () => {
-      setCurrentTime(audio.currentTime);
-      if (range && audio.currentTime >= range.endTime) {
-        audio.pause();
-      }
-    };
-    const onCanPlay = () => {
-      setReady(true);
-      if (range) audio.currentTime = range.startTime;
-    };
-    const onMeta = () => {
-      if (audio.duration && isFinite(audio.duration)) {
-        setAudioDuration(audio.duration);
-      }
-    };
-    const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
-    const onError = () => setAudioError(true);
+    if (!ctxRef.current) {
+      ctxRef.current = new AudioContext();
+    }
+    const ctx = ctxRef.current;
 
-    audio.addEventListener("timeupdate", onTime);
-    audio.addEventListener("canplay", onCanPlay);
-    audio.addEventListener("loadedmetadata", onMeta);
-    audio.addEventListener("play", onPlay);
-    audio.addEventListener("pause", onPause);
-    audio.addEventListener("error", onError);
+    fetch(audioUrl)
+      .then((r) => {
+        if (!r.ok) throw new Error(`${r.status}`);
+        return r.arrayBuffer();
+      })
+      .then((buf) => {
+        if (cancelled) return;
+        return ctx.decodeAudioData(buf);
+      })
+      .then((decoded) => {
+        if (cancelled || !decoded) return;
+        bufferRef.current = decoded;
+        setAudioDuration(decoded.duration);
+        setReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setAudioError(true);
+      });
 
     return () => {
-      audio.removeEventListener("timeupdate", onTime);
-      audio.removeEventListener("canplay", onCanPlay);
-      audio.removeEventListener("loadedmetadata", onMeta);
-      audio.removeEventListener("play", onPlay);
-      audio.removeEventListener("pause", onPause);
-      audio.removeEventListener("error", onError);
+      cancelled = true;
+      stopSource();
     };
-  }, [range?.startTime, range?.endTime]);
+  }, [audioUrl, stopSource]);
 
   useEffect(() => {
     activeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -254,24 +283,40 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
     (s) => currentTime >= s.start && currentTime < s.end,
   );
 
-  const seekTo = (time: number) => {
-    if (audioRef.current) {
-      audioRef.current.currentTime = time;
-    }
-  };
-
-  const togglePlay = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
+  const seekTo = useCallback((time: number) => {
+    offsetRef.current = time;
+    setCurrentTime(time);
     if (playing) {
-      audio.pause();
-    } else {
-      if (range && audio.currentTime >= range.endTime) {
-        audio.currentTime = range.startTime;
-      }
-      audio.play();
+      playFrom(time);
     }
-  };
+  }, [playing, playFrom]);
+
+  const togglePlay = useCallback(() => {
+    if (playing) {
+      const ctx = ctxRef.current;
+      if (ctx) {
+        offsetRef.current += ctx.currentTime - playStartRef.current;
+      }
+      stopSource();
+      setPlaying(false);
+    } else {
+      let offset = offsetRef.current;
+      if (range && offset >= range.endTime) {
+        offset = range.startTime;
+      }
+      if (ctxRef.current?.state === "suspended") {
+        ctxRef.current.resume();
+      }
+      playFrom(offset);
+    }
+  }, [playing, range, stopSource, playFrom]);
+
+  useEffect(() => {
+    if (ready && range) {
+      offsetRef.current = range.startTime;
+      setCurrentTime(range.startTime);
+    }
+  }, [ready, range?.startTime]);
 
   const elapsed = Math.max(0, currentTime - startTime);
   const progress = clipDuration > 0 ? Math.min(1, elapsed / clipDuration) : 0;
@@ -282,8 +327,6 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
     <div className="space-y-3">
       {audioUrl && !audioError && (
         <div className="space-y-2">
-          <audio ref={audioRef} src={blobUrl || undefined} preload="auto" />
-
           <div className="flex items-center gap-2">
             <button
               onClick={togglePlay}
