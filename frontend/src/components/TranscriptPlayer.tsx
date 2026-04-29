@@ -223,8 +223,12 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
     source.connect(ctx.destination);
     source.onended = () => {
       if (sourceRef.current === source) {
-        setPlaying(false);
         cancelAnimationFrame(rafRef.current);
+        sourceRef.current = null;
+        const finalTime = buffer.duration;
+        offsetRef.current = finalTime;
+        setCurrentTime(finalTime);
+        setPlaying(false);
       }
     };
     const clampedOffset = Math.max(0, Math.min(offset, buffer.duration));
