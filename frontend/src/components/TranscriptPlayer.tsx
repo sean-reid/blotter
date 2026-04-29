@@ -201,12 +201,14 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
     if (range && pos >= range.endTime) {
       stopSource();
       offsetRef.current = range.endTime;
+      setCurrentTime(range.endTime);
       setPlaying(false);
       return;
     }
     if (bufferRef.current && pos >= bufferRef.current.duration) {
       stopSource();
       offsetRef.current = bufferRef.current.duration;
+      setCurrentTime(bufferRef.current.duration);
       setPlaying(false);
       return;
     }
@@ -225,9 +227,6 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
       if (sourceRef.current === source) {
         cancelAnimationFrame(rafRef.current);
         sourceRef.current = null;
-        const finalTime = buffer.duration;
-        offsetRef.current = finalTime;
-        setCurrentTime(finalTime);
         setPlaying(false);
       }
     };
@@ -305,8 +304,10 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
       setPlaying(false);
     } else {
       let offset = offsetRef.current;
-      if (range && offset >= range.endTime) {
-        offset = range.startTime;
+      if (range) {
+        if (offset < range.startTime || offset >= range.endTime) {
+          offset = range.startTime;
+        }
       }
       if (ctxRef.current?.state === "suspended") {
         await ctxRef.current.resume();
