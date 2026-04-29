@@ -50,7 +50,7 @@ class GCSClient:
 
     def upload(self, local_path: Path, gcs_path: str) -> str:
         blob = self._bucket.blob(gcs_path)
-        blob.upload_from_filename(str(local_path))
+        blob.upload_from_filename(str(local_path), content_type="audio/wav")
         log.info("uploaded to gcs", path=gcs_path, size_mb=round(local_path.stat().st_size / 1e6, 1))
         return f"gs://{self._bucket.name}/{gcs_path}"
 
@@ -65,7 +65,10 @@ class GCSClient:
 
     def signed_url(self, gcs_path: str, expiration_hours: int = 24) -> str:
         blob = self._bucket.blob(gcs_path)
-        return blob.generate_signed_url(expiration=timedelta(hours=expiration_hours))
+        return blob.generate_signed_url(
+            expiration=timedelta(hours=expiration_hours),
+            response_type="audio/wav",
+        )
 
     def delete(self, gcs_path: str) -> None:
         blob = self._bucket.blob(gcs_path)
