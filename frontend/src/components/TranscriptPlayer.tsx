@@ -231,8 +231,19 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
     const buffer = bufferRef.current;
     if (!ctx || !buffer) return;
     stopSource();
+
+    const clampedOffset = Math.max(0, Math.min(offset, buffer.duration));
+    const startSample = Math.floor(clampedOffset * buffer.sampleRate);
+    const trimmedLength = buffer.length - startSample;
+    if (trimmedLength <= 0) return;
+
+    const trimmed = ctx.createBuffer(buffer.numberOfChannels, trimmedLength, buffer.sampleRate);
+    for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+      trimmed.getChannelData(ch).set(buffer.getChannelData(ch).subarray(startSample));
+    }
+
     const source = ctx.createBufferSource();
-    source.buffer = buffer;
+    source.buffer = trimmed;
     source.connect(ctx.destination);
     source.onended = () => {
       if (sourceRef.current === source) {
@@ -241,11 +252,10 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
         setPlaying(false);
       }
     };
-    const clampedOffset = Math.max(0, Math.min(offset, buffer.duration));
     sourceRef.current = source;
     offsetRef.current = clampedOffset;
     playStartRef.current = performance.now();
-    source.start(0, clampedOffset);
+    source.start(0);
     setPlaying(true);
     rafRef.current = requestAnimationFrame(tick);
   }, [stopSource, tick]);
