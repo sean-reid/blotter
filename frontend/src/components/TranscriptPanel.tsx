@@ -180,6 +180,7 @@ export default function TranscriptPanel({ transcript, event, searchQuery, onClos
               segments={segments}
               context={context}
               searchQuery={searchQuery}
+              durationMs={transcript.duration_ms}
             />
           </div>
 

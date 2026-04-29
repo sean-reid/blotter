@@ -6,6 +6,7 @@ interface Props {
   segments: TranscriptSegment[];
   context?: string;
   searchQuery?: string;
+  durationMs?: number;
 }
 
 function formatTime(seconds: number): string {
@@ -167,7 +168,7 @@ function findRangeByContext(
   };
 }
 
-export default function TranscriptPlayer({ audioUrl, segments, context, searchQuery }: Props) {
+export default function TranscriptPlayer({ audioUrl, segments, context, searchQuery, durationMs }: Props) {
   const activeRef = useRef<HTMLDivElement>(null);
   const ctxRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -175,6 +176,7 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
   const playStartRef = useRef(0);
   const offsetRef = useRef(0);
   const rafRef = useRef(0);
+  const audioOffsetRef = useRef(0);
 
   const [currentTime, setCurrentTime] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -216,10 +218,13 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
       setPlaying(false);
       return;
     }
-    if (bufferRef.current && pos >= bufferRef.current.duration) {
+    const effectiveDuration = bufferRef.current
+      ? bufferRef.current.duration - audioOffsetRef.current
+      : 0;
+    if (bufferRef.current && pos >= effectiveDuration) {
       stopSource();
-      offsetRef.current = bufferRef.current.duration;
-      setCurrentTime(bufferRef.current.duration);
+      offsetRef.current = effectiveDuration;
+      setCurrentTime(effectiveDuration);
       setPlaying(false);
       return;
     }
@@ -232,8 +237,8 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
     if (!ctx || !buffer) return;
     stopSource();
 
-    const clampedOffset = Math.max(0, Math.min(offset, buffer.duration));
-    const startSample = Math.floor(clampedOffset * buffer.sampleRate);
+    const audioPos = Math.max(0, Math.min(offset + audioOffsetRef.current, buffer.duration));
+    const startSample = Math.floor(audioPos * buffer.sampleRate);
     const trimmedLength = buffer.length - startSample;
     if (trimmedLength <= 0) return;
 
@@ -253,7 +258,7 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
       }
     };
     sourceRef.current = source;
-    offsetRef.current = clampedOffset;
+    offsetRef.current = offset;
     playStartRef.current = performance.now();
     source.start(0);
     setPlaying(true);
@@ -286,7 +291,14 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
       .then((decoded) => {
         if (cancelled || !decoded) return;
         bufferRef.current = decoded;
-        setAudioDuration(decoded.duration);
+        if (durationMs && durationMs > 0) {
+          const expected = durationMs / 1000;
+          const diff = decoded.duration - expected;
+          audioOffsetRef.current = diff > 5 ? diff : 0;
+        } else {
+          audioOffsetRef.current = 0;
+        }
+        setAudioDuration(decoded.duration - audioOffsetRef.current);
         setReady(true);
       })
       .catch(() => {
@@ -297,7 +309,7 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
       cancelled = true;
       stopSource();
     };
-  }, [audioUrl, stopSource]);
+  }, [audioUrl, durationMs, stopSource]);
 
   useEffect(() => {
     activeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });

@@ -209,6 +209,7 @@ export default function EventPanel({ event, onClose }: Props) {
                 audioUrl={transcript.audio_url}
                 segments={parseSegments(transcript.segments)}
                 context={event.context}
+                durationMs={transcript.duration_ms}
               />
             ) : (
               <div className="text-xs text-[#545d68] italic">No audio available</div>
