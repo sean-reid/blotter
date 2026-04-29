@@ -181,6 +181,7 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
         if (cancelled) return;
         objectUrl = URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
         setBlobUrl(objectUrl);
+        queueMicrotask(() => audioRef.current?.load());
       })
       .catch(() => {
         if (!cancelled) setAudioError(true);
@@ -281,7 +282,7 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
     <div className="space-y-3">
       {audioUrl && !audioError && (
         <div className="space-y-2">
-          <audio ref={audioRef} src={blobUrl ?? ""} preload="auto" />
+          <audio ref={audioRef} src={blobUrl || undefined} preload="auto" />
 
           <div className="flex items-center gap-2">
             <button
