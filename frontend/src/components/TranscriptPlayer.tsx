@@ -163,6 +163,29 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
   const [audioError, setAudioError] = useState(false);
   const [ready, setReady] = useState(false);
   const [audioDuration, setAudioDuration] = useState(0);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!audioUrl) return;
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    fetch(audioUrl)
+      .then((r) => r.blob())
+      .then((blob) => {
+        if (cancelled) return;
+        const wavBlob = new Blob([blob], { type: "audio/wav" });
+        objectUrl = URL.createObjectURL(wavBlob);
+        setBlobUrl(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setAudioError(true);
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      setBlobUrl(null);
+    };
+  }, [audioUrl]);
 
   const range =
     (searchQuery ? findRangeByQuery(segments, searchQuery) : null)
@@ -254,7 +277,7 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
     <div className="space-y-3">
       {audioUrl && !audioError && (
         <div className="space-y-2">
-          <audio ref={audioRef} src={audioUrl} preload="auto" />
+          <audio ref={audioRef} src={blobUrl ?? undefined} preload="auto" />
 
           <div className="flex items-center gap-2">
             <button
