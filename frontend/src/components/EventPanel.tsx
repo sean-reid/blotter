@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ScannerEvent, TranscriptResult, TranscriptSegment } from "../lib/types";
-import { fetchSurroundingTranscripts } from "../lib/api";
+import { fetchTranscriptForEvent } from "../lib/api";
 import Tags from "./Tags";
 
 interface Props {
@@ -253,8 +253,9 @@ export default function EventPanel({ event, onClose }: Props) {
       setPlaying(false);
       setAudioReady(false);
       stopSource();
-      fetchSurroundingTranscripts(event.feed_id, event.archive_ts)
-        .then((results) => {
+      fetchTranscriptForEvent(event.feed_id, event.archive_ts)
+        .then((result) => {
+          const results = result ? [result] : [];
           setTranscripts(results);
           setFlatSegments(buildFlatSegments(results));
         })
