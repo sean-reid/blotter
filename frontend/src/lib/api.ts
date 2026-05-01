@@ -59,7 +59,8 @@ export async function fetchEvents(
       ` AND (context ILIKE {search:String}` +
       ` OR normalized ILIKE {search:String}` +
       ` OR raw_location ILIKE {search:String}` +
-      ` OR tags ILIKE {search:String})`;
+      ` OR tags ILIKE {search:String}` +
+      ` OR feed_id ILIKE {search:String})`;
   }
 
   sql += ` ORDER BY event_ts DESC LIMIT 5000`;
@@ -126,7 +127,7 @@ export async function searchTranscripts(
     `AND archive_ts BETWEEN fromUnixTimestamp({startTs:UInt64}) AND fromUnixTimestamp({endTs:UInt64})`;
 
   if (hasSearch) {
-    sql += ` AND (transcript ILIKE {search:String} OR tags ILIKE {search:String})`;
+    sql += ` AND (transcript ILIKE {search:String} OR tags ILIKE {search:String} OR feed_id ILIKE {search:String} OR feed_name ILIKE {search:String})`;
   }
 
   sql += ` ORDER BY archive_ts DESC LIMIT 50`;
