@@ -437,9 +437,6 @@ export default function EventPanel({ event, onClose }: Props) {
                             }
                           `}
                         >
-                          <span className="text-[10px] tabular-nums text-[#545d68] pt-0.5 shrink-0">
-                            {formatDuration(fs.seg.start)}
-                          </span>
                           <span className="text-[12px] leading-relaxed">{fs.seg.text}</span>
                         </div>
                       </div>
