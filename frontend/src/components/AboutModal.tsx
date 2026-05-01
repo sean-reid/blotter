@@ -74,9 +74,9 @@ export default function AboutModal({ open, onClose }: Props) {
 
         <div className="px-5 py-4 space-y-4 text-[13px] leading-relaxed text-[#adbac7]">
           <p>
-            Blotter monitors public safety radio feeds across Los Angeles County,
-            transcribes dispatch audio, extracts locations from the transcripts,
-            and plots activity on a map in near real-time.
+            Blotter monitors public safety radio across 13 US metro areas,
+            transcribes dispatch audio in near real-time, extracts locations,
+            and plots activity on a map.
           </p>
 
           <div>
@@ -84,23 +84,11 @@ export default function AboutModal({ open, onClose }: Props) {
               How it works
             </h3>
             <p>
-              Live audio streams from Broadcastify are captured and transcribed
-              using Faster Whisper on GPU. Google Cloud NLP extracts location
-              references, which are geocoded via Google Places and plotted on the
-              map. All transcripts and audio are searchable and playable.
+              Radio calls from OpenMHz are captured and transcribed using
+              Faster Whisper on GPU. Google Cloud NLP extracts location
+              references, which are geocoded and plotted on the map.
+              All transcripts and audio are searchable and playable.
             </p>
-          </div>
-
-          <div>
-            <h3 className="text-[11px] font-medium uppercase tracking-wider text-[#545d68] mb-1.5">
-              Stack
-            </h3>
-            <ul className="space-y-0.5 text-[#768390]">
-              <li>Broadcastify live streams</li>
-              <li>Faster Whisper (large-v3) on RunPod GPU</li>
-              <li>Google Cloud NLP + Places API</li>
-              <li>ClickHouse + Cloudflare Pages</li>
-            </ul>
           </div>
 
           <div>
