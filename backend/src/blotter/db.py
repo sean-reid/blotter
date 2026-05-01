@@ -95,12 +95,15 @@ def has_recent_event(
     normalized: str,
     lat: float,
     lon: float,
+    ref_ts: str,
     minutes: int = 10,
     radius_deg: float = 0.002,
 ) -> bool:
+    ts_clean = ref_ts.replace("+00:00", "").replace("Z", "")
     result = client.query(
         "SELECT count() FROM scanner_events "
-        "WHERE event_ts > now() - INTERVAL {minutes:UInt32} MINUTE "
+        "WHERE event_ts BETWEEN toDateTime64({ts:String}, 3) - INTERVAL {minutes:UInt32} MINUTE "
+        "AND toDateTime64({ts:String}, 3) + INTERVAL {minutes:UInt32} MINUTE "
         "AND (normalized = {normalized:String} "
         "  OR (abs(latitude - {lat:Float64}) < {radius:Float64} "
         "      AND abs(longitude - {lon:Float64}) < {radius:Float64}))",
@@ -110,6 +113,7 @@ def has_recent_event(
             "lat": lat,
             "lon": lon,
             "radius": radius_deg,
+            "ts": ts_clean,
         },
     )
     return result.first_row[0] > 0
