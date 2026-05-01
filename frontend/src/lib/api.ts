@@ -40,7 +40,7 @@ export async function fetchEvents(
   let sql =
     `SELECT e.feed_id, e.archive_ts, e.event_ts, e.raw_location, e.normalized, ` +
     `e.latitude, e.longitude, e.confidence, e.context, e.tags ` +
-    `FROM blotter_staging.scanner_events FINAL e ` +
+    `FROM blotter_staging.scanner_events FINAL AS e ` +
     `WHERE e.event_ts BETWEEN fromUnixTimestamp({startTs:UInt64}) AND fromUnixTimestamp({endTs:UInt64})`;
 
   if (bounds) {
