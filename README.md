@@ -1,6 +1,6 @@
 # Blotter
 
-Real-time police scanner map for Los Angeles County. Live audio from Broadcastify is transcribed, locations are extracted and geocoded, and events are plotted on a map — all within minutes of the original dispatch.
+Real-time police scanner map covering 13 US metro areas. Per-call audio from OpenMHz is transcribed, locations are extracted and geocoded, and events are plotted on a map — all within seconds of the original dispatch.
 
 **Live at [blotter.fm](https://blotter.fm)**
 
@@ -12,22 +12,22 @@ Real-time police scanner map for Los Angeles County. Live audio from Broadcastif
 %%{ init: { "theme": "dark", "flowchart": { "rankSpacing": 40, "nodeSpacing": 25 } } }%%
 flowchart TB
 
-  FEEDS(["6 Broadcastify Feeds<br/>LAPD South/West/Valley/Hotshot<br/>LASD Dispatch, Long Beach PD"])
+  FEEDS(["13 OpenMHz Systems<br/>LA, Chicago, Charlotte, Philly,<br/>Seattle, SF, Dallas, Portland, +5"])
 
-  FFM["ffmpeg x6<br/>16kHz mono PCM<br/>300s segments, 5s overlap"]
+  CAPTURE["OpenMHz Poller<br/>Playwright per-system<br/>per-call WAV download"]
 
   Q1[["Redis queue<br/>capture:chunks"]]
 
-  WHISPER["faster-whisper GPU<br/>large-v3 float16<br/>boundary dedup, ad strip<br/>police code extraction"]
+  WHISPER["faster-whisper GPU<br/>large-v3 float16<br/>locale-specific prompts<br/>police/signal code extraction"]
 
   Q2[["Redis queue<br/>transcribe:done"]]
 
-  EXTRACT["NLP Entity Extraction<br/>+ Google Places Geocoding<br/>division bias, name validation<br/>event dedup 10min/500m"]
+  EXTRACT["NLP Entity Extraction<br/>+ Google Places Geocoding<br/>per-city region bias<br/>event dedup 10min/500m"]
 
   subgraph DB["ClickHouse 24.8"]
     direction LR
     T_TX[("scanner_transcripts")]
-    T_EV[("scanner_events")]
+    T_EV[("scanner_events<br/>ReplacingMergeTree")]
     T_MET[("pipeline_metrics")]
   end
 
@@ -41,14 +41,14 @@ flowchart TB
   GNLP["Google NLP API<br/>entity extraction"]
   GPLACES["Google Places API<br/>findplacefromtext"]
 
-  CRON["Monitoring Cron<br/>heartbeat, procs, disk,<br/>queues, ffmpeg, services,<br/>throughput, daily digest"]
+  CRON["Monitoring Cron<br/>heartbeat, procs, disk,<br/>queues, services,<br/>throughput, daily digest"]
   NTFY["ntfy.sh<br/>push alerts"]
   CANARY["cronjob.org 15m<br/>/api/health endpoint"]
 
   DEPLOY["GitHub Actions<br/>wrangler pages deploy"]
 
-  FEEDS --> FFM
-  FFM --> Q1
+  FEEDS --> CAPTURE
+  CAPTURE --> Q1
   Q1 --> WHISPER
   WHISPER --> Q2
   Q2 --> EXTRACT
@@ -61,7 +61,7 @@ flowchart TB
   FNQUERY --- SPA
   SPA --- USER
 
-  FFM -->|"upload wav"| GCS
+  CAPTURE -->|"upload wav"| GCS
   SPA -.->|"audio playback"| GCS
 
   EXTRACT --> GNLP
@@ -84,7 +84,7 @@ flowchart TB
 
   class Q1,Q2 queue
   class T_TX,T_EV,T_MET,GCS db
-  class FFM,WHISPER,EXTRACT stage
+  class CAPTURE,WHISPER,EXTRACT stage
   class GNLP,GPLACES google
   class NTFY,CANARY,CRON alert
   class TUNNEL,ACCESS,FNQUERY,SPA serve
@@ -96,17 +96,17 @@ flowchart TB
 
 | Layer | Technology |
 |-------|-----------|
-| Audio capture | ffmpeg, 5-min WAV chunks, Google Cloud Storage |
-| Transcription | faster-whisper large-v3 on CUDA GPU |
+| Audio capture | OpenMHz API via Playwright, per-call WAV, Google Cloud Storage |
+| Transcription | faster-whisper large-v3 on CUDA GPU, locale-specific prompts |
 | NLP | Google Cloud Natural Language API |
-| Geocoding | Google Places API with division biasing |
-| Database | ClickHouse (H3 geospatial indexing) |
+| Geocoding | Google Places API with per-city region biasing |
+| Database | ClickHouse (ReplacingMergeTree, 7-day TTL) |
 | Queues | Redis (in-memory, two-stage pipeline) |
 | Frontend | React 19, MapLibre GL, Tailwind CSS |
 | Hosting | Cloudflare Pages + Pages Functions |
 | Tunnel | Cloudflare Tunnel + Access (mTLS) |
 | Monitoring | Cron scripts, ntfy.sh push alerts, cronjob.org canary |
-| GPU | RunPod spot instance (RTX 3090) |
+| GPU | RunPod (RTX 3090) |
 | Process management | supervisord (redis, clickhouse, cloudflared, pipeline) |
 
 ## Project structure
@@ -115,12 +115,12 @@ flowchart TB
 backend/
   src/blotter/
     stages/
-      capture.py            # ffmpeg stream capture, GCS upload
-      stream_transcribe.py  # Whisper transcription with boundary dedup
-      extract.py            # Ad stripping, location clause extraction
+      capture_openmhz.py    # OpenMHz per-call capture via Playwright
+      stream_transcribe.py  # Whisper transcription with locale prompts
+      extract.py            # Location clause extraction
       extract_nlp.py        # Google NLP entity extraction
-      extract_codes.py      # Police/10-code/penal code tagging
-      geocode.py            # Google Places geocoding with division bias
+      extract_codes.py      # Police/10-code/signal code tagging
+      geocode.py            # Google Places geocoding with per-city bias
       worker.py             # Process managers (capture, transcribe, process)
     config.py               # Pydantic settings (env-based)
     db.py                   # ClickHouse client
@@ -180,7 +180,7 @@ docker compose up -d
 cd backend
 uv sync
 cp .env.example .env  # configure feeds, API keys
-uv run blotter stream start
+uv run blotter stream start --openmhz
 
 # Frontend
 cd frontend
@@ -188,7 +188,7 @@ npm install
 npm run dev
 ```
 
-Requires: ffmpeg, Redis, ClickHouse, NVIDIA GPU with CUDA (for Whisper).
+Requires: ffmpeg, Redis, ClickHouse, NVIDIA GPU with CUDA (for Whisper), Playwright.
 
 ## Deployment
 

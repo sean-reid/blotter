@@ -3,24 +3,24 @@ flowchart TB
 
   %% ============ MAIN PIPELINE SPINE ============
 
-  FEEDS(["6 Broadcastify Feeds<br/>LAPD South/West/Valley/Hotshot<br/>LASD Dispatch, Long Beach PD"])
+  FEEDS(["13 OpenMHz Systems<br/>LA, Chicago, Charlotte, Philly,<br/>Seattle, SF, Dallas, Portland, +5"])
 
-  FFM["ffmpeg x6<br/>16kHz mono PCM<br/>300s segments, 5s overlap"]
+  CAPTURE["OpenMHz Poller<br/>Playwright per-system<br/>per-call WAV download"]
 
   Q1[["Redis queue<br/>capture:chunks"]]
 
-  WHISPER["faster-whisper GPU<br/>large-v3 float16<br/>boundary dedup, ad strip<br/>police code extraction"]
+  WHISPER["faster-whisper GPU<br/>large-v3 float16<br/>locale-specific prompts<br/>police/signal code extraction"]
 
   Q2[["Redis queue<br/>transcribe:done"]]
 
-  EXTRACT["NLP Entity Extraction<br/>+ Google Places Geocoding<br/>division bias, name validation<br/>event dedup 10min/500m"]
+  EXTRACT["NLP Entity Extraction<br/>+ Google Places Geocoding<br/>per-city region bias<br/>event dedup 10min/500m"]
 
   %% ============ STORAGE ============
 
   subgraph DB["ClickHouse 24.8"]
     direction LR
     T_TX[("scanner_transcripts")]
-    T_EV[("scanner_events")]
+    T_EV[("scanner_events<br/>ReplacingMergeTree")]
     T_MET[("pipeline_metrics")]
   end
 
@@ -40,7 +40,7 @@ flowchart TB
 
   %% ============ MONITORING ============
 
-  CRON["Monitoring Cron<br/>heartbeat, procs, disk,<br/>queues, ffmpeg, services,<br/>throughput, daily digest"]
+  CRON["Monitoring Cron<br/>heartbeat, procs, disk,<br/>queues, services,<br/>throughput, daily digest"]
   NTFY["ntfy.sh<br/>push alerts"]
   CANARY["cronjob.org 15m<br/>/api/health endpoint"]
 
@@ -50,8 +50,8 @@ flowchart TB
 
   %% ============ MAIN FLOW (top to bottom) ============
 
-  FEEDS --> FFM
-  FFM --> Q1
+  FEEDS --> CAPTURE
+  CAPTURE --> Q1
   Q1 --> WHISPER
   WHISPER --> Q2
   Q2 --> EXTRACT
@@ -68,7 +68,7 @@ flowchart TB
 
   %% ============ SIDE: Audio storage ============
 
-  FFM -->|"upload wav"| GCS
+  CAPTURE -->|"upload wav"| GCS
   SPA -.->|"audio playback"| GCS
 
   %% ============ SIDE: Google APIs ============
@@ -99,7 +99,7 @@ flowchart TB
 
   class Q1,Q2 queue
   class T_TX,T_EV,T_MET,GCS db
-  class FFM,WHISPER,EXTRACT stage
+  class CAPTURE,WHISPER,EXTRACT stage
   class GNLP,GPLACES google
   class NTFY,CANARY,CRON alert
   class TUNNEL,ACCESS,FNQUERY,SPA serve
