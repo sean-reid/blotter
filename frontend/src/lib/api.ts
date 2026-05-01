@@ -38,10 +38,10 @@ export async function fetchEvents(
   };
 
   let sql =
-    `SELECT e.feed_id, e.archive_ts, e.event_ts, e.raw_location, e.normalized, ` +
-    `e.latitude, e.longitude, e.confidence, e.context, e.tags ` +
-    `FROM blotter_staging.scanner_events FINAL AS e ` +
-    `WHERE e.event_ts BETWEEN fromUnixTimestamp({startTs:UInt64}) AND fromUnixTimestamp({endTs:UInt64})`;
+    `SELECT feed_id, archive_ts, event_ts, raw_location, normalized, ` +
+    `latitude, longitude, confidence, context, tags ` +
+    `FROM blotter_staging.scanner_events FINAL ` +
+    `WHERE event_ts BETWEEN fromUnixTimestamp({startTs:UInt64}) AND fromUnixTimestamp({endTs:UInt64})`;
 
   if (bounds) {
     params.west = String(bounds.west);
@@ -49,20 +49,20 @@ export async function fetchEvents(
     params.south = String(bounds.south);
     params.north = String(bounds.north);
     sql +=
-      ` AND e.longitude BETWEEN {west:Float64} AND {east:Float64}` +
-      ` AND e.latitude BETWEEN {south:Float64} AND {north:Float64}`;
+      ` AND longitude BETWEEN {west:Float64} AND {east:Float64}` +
+      ` AND latitude BETWEEN {south:Float64} AND {north:Float64}`;
   }
 
   if (search) {
     params.search = `%${search}%`;
     sql +=
-      ` AND (e.context ILIKE {search:String}` +
-      ` OR e.normalized ILIKE {search:String}` +
-      ` OR e.raw_location ILIKE {search:String}` +
-      ` OR e.tags ILIKE {search:String})`;
+      ` AND (context ILIKE {search:String}` +
+      ` OR normalized ILIKE {search:String}` +
+      ` OR raw_location ILIKE {search:String}` +
+      ` OR tags ILIKE {search:String})`;
   }
 
-  sql += ` ORDER BY e.event_ts DESC LIMIT 5000`;
+  sql += ` ORDER BY event_ts DESC LIMIT 5000`;
   return query<ScannerEvent>(sql, params);
 }
 
