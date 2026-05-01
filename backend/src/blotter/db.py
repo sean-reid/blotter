@@ -115,6 +115,33 @@ def has_recent_event(
     return result.first_row[0] > 0
 
 
+def fetch_surrounding_context(
+    client: Client,
+    feed_id: str,
+    archive_ts: str,
+    window_minutes: int = 2,
+    max_rows: int = 20,
+) -> str:
+    ts_clean = archive_ts.replace("+00:00", "").replace("Z", "")
+    result = client.query(
+        "SELECT transcript FROM scanner_transcripts "
+        "WHERE feed_id = {feed_id:String} "
+        "AND archive_ts BETWEEN toDateTime64({ts:String}, 3) - INTERVAL {window:UInt32} MINUTE "
+        "AND toDateTime64({ts:String}, 3) + INTERVAL {window:UInt32} MINUTE "
+        "AND length(transcript) > 0 "
+        "ORDER BY archive_ts ASC "
+        "LIMIT {limit:UInt32}",
+        parameters={
+            "feed_id": feed_id,
+            "ts": ts_clean,
+            "window": window_minutes,
+            "limit": max_rows,
+        },
+    )
+    texts = [row[0] for row in result.result_rows if row[0].strip()]
+    return " ".join(texts)
+
+
 def get_latest_transcript(client: Client, feed_id: str) -> dict | None:
     result = client.query(
         "SELECT archive_ts, transcript, segments, audio_url "

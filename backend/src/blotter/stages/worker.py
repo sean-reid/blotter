@@ -7,7 +7,7 @@ from blotter.config import (
     ClickHouseConfig, GCSConfig, GoogleGeocodingConfig, GoogleNLPConfig,
     OpenMhzConfig, RedisConfig, RegionConfig, StreamConfig, TranscriptionConfig,
 )
-from blotter.db import get_client, has_recent_event, insert_events, insert_transcript, transcript_exists
+from blotter.db import fetch_surrounding_context, get_client, has_recent_event, insert_events, insert_transcript, transcript_exists
 from blotter.gcs import get_storage
 from blotter.log import get_logger
 from blotter.models import GeocodedEvent, Transcript, TranscriptTask
@@ -154,9 +154,12 @@ def run_processor(
             continue
 
         try:
-            entities = extract_entities(task.full_text, nlp_config)
+            surrounding = fetch_surrounding_context(ch, task.feed_id, str(task.chunk_ts))
+            context_text = surrounding if surrounding else task.full_text
+
+            entities = extract_entities(context_text, nlp_config)
             if not entities:
-                entities = extract_clauses(task.full_text)
+                entities = extract_clauses(context_text)
 
             events = []
             batch_coords: list[tuple[float, float]] = []
@@ -176,6 +179,7 @@ def run_processor(
                     log.debug("skipping batch duplicate", normalized=name)
                     continue
                 batch_coords.append((lat, lon))
+                ctx = surrounding[:500] if surrounding else e.context
                 events.append(GeocodedEvent(
                     feed_id=task.feed_id,
                     archive_ts=task.chunk_ts,
@@ -185,7 +189,7 @@ def run_processor(
                     latitude=lat,
                     longitude=lon,
                     confidence=e.confidence,
-                    context=e.context,
+                    context=ctx,
                     tags=task.tags,
                 ))
 
