@@ -84,6 +84,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     headers: {
       ...headers,
       "Content-Type": resp.headers.get("Content-Type") || "text/plain",
+      "Cache-Control": "no-store",
     },
   });
 };
