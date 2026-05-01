@@ -167,7 +167,7 @@ def run_processor(
                 if result is None:
                     continue
                 lat, lon, name = result
-                if has_recent_event(ch, name, lat, lon, minutes=10):
+                if has_recent_event(ch, name, lat, lon, ref_ts=str(task.chunk_ts), minutes=10):
                     log.debug("skipping duplicate event", normalized=name)
                     continue
                 too_close = any(
