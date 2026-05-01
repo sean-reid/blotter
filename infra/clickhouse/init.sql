@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS blotter.scanner_transcripts (
     tags          String DEFAULT '',
     created_at    DateTime64(3) DEFAULT now64(3)
 ) ENGINE = MergeTree()
-ORDER BY (feed_id, archive_ts);
+ORDER BY (feed_id, archive_ts)
+TTL archive_ts + INTERVAL 7 DAY;
 
 CREATE TABLE IF NOT EXISTS blotter.scanner_events (
     feed_id       LowCardinality(String),
@@ -27,7 +28,8 @@ CREATE TABLE IF NOT EXISTS blotter.scanner_events (
     tags          String DEFAULT '',
     created_at    DateTime64(3) DEFAULT now64(3)
 ) ENGINE = ReplacingMergeTree(created_at)
-ORDER BY (feed_id, archive_ts, normalized);
+ORDER BY (feed_id, archive_ts, normalized)
+TTL event_ts + INTERVAL 7 DAY;
 
 CREATE TABLE IF NOT EXISTS blotter.pipeline_metrics (
     ts       DateTime64(3) DEFAULT now64(3),
