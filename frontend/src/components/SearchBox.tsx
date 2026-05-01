@@ -85,6 +85,15 @@ export default function SearchBox({
     onInputChange?.(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
+    if (!value.trim()) {
+      setActiveRange(null);
+      setRangeTooLarge(false);
+      const now = Math.floor(Date.now() / 1000);
+      onTimeRangeChange({ start: now - 21600, end: now });
+      debounceRef.current = setTimeout(() => onSearch(""), 300);
+      return;
+    }
+
     const { cleanQuery, timeRange: parsed, tooLarge } = parseTimeFilter(value);
     if (tooLarge) {
       setRangeTooLarge(true);
