@@ -109,7 +109,7 @@ export default function EventPanel({ event, onClose }: Props) {
   const activeIdxRef = useRef(-1);
 
   transcriptsRef.current = transcripts;
-  const loadAndPlayRef = useRef<(url: string, dur: number, idx: number, seek: number) => void>(() => {});
+  const loadAndPlayRef = useRef<(url: string, dur: number, idx: number, seek: number, advancing?: boolean) => void>(() => {});
 
   const stopSource = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
@@ -125,7 +125,7 @@ export default function EventPanel({ event, onClose }: Props) {
     const all = transcriptsRef.current;
     if (idx < 0 || idx >= all.length - 1) { setPlaying(false); return; }
     const next = all[idx + 1]!;
-    loadAndPlayRef.current(next.audio_url, next.duration_ms, idx + 1, 0);
+    loadAndPlayRef.current(next.audio_url, next.duration_ms, idx + 1, 0, true);
   }, []);
 
   const tick = useCallback(() => {
@@ -183,11 +183,13 @@ export default function EventPanel({ event, onClose }: Props) {
     rafRef.current = requestAnimationFrame(tick);
   }, [stopSource, tick]);
 
-  const loadAndPlay = useCallback((audioUrl: string, durationMs: number, transcriptIdx: number, seekTo: number) => {
+  const loadAndPlay = useCallback((audioUrl: string, durationMs: number, transcriptIdx: number, seekTo: number, advancing = false) => {
     if (!audioUrl) return;
     stopSource();
-    setAudioReady(false);
-    setPlaying(false);
+    if (!advancing) {
+      setAudioReady(false);
+      setPlaying(false);
+    }
     setActiveTranscriptIdx(transcriptIdx);
     activeIdxRef.current = transcriptIdx;
     bufferRef.current = null;
