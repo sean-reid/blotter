@@ -104,6 +104,12 @@ export default function EventPanel({ event, onClose }: Props) {
   const audioOffsetRef = useRef(0);
   const activeRef = useRef<HTMLDivElement>(null);
   const loadingUrlRef = useRef("");
+  const autoAdvanceRef = useRef(true);
+  const transcriptsRef = useRef<TranscriptResult[]>([]);
+  const activeIdxRef = useRef(-1);
+
+  transcriptsRef.current = transcripts;
+  const loadAndPlayRef = useRef<(url: string, dur: number, idx: number, seek: number) => void>(() => {});
 
   const stopSource = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
@@ -112,6 +118,14 @@ export default function EventPanel({ event, onClose }: Props) {
       sourceRef.current.disconnect();
       sourceRef.current = null;
     }
+  }, []);
+
+  const advanceToNext = useCallback(() => {
+    const idx = activeIdxRef.current;
+    const all = transcriptsRef.current;
+    if (idx < 0 || idx >= all.length - 1) { setPlaying(false); return; }
+    const next = all[idx + 1]!;
+    loadAndPlayRef.current(next.audio_url, next.duration_ms, idx + 1, 0);
   }, []);
 
   const tick = useCallback(() => {
@@ -124,11 +138,15 @@ export default function EventPanel({ event, onClose }: Props) {
       stopSource();
       offsetRef.current = effectiveDuration;
       setCurrentTime(effectiveDuration);
-      setPlaying(false);
+      if (autoAdvanceRef.current) {
+        advanceToNext();
+      } else {
+        setPlaying(false);
+      }
       return;
     }
     rafRef.current = requestAnimationFrame(tick);
-  }, [stopSource]);
+  }, [stopSource, advanceToNext]);
 
   const playFrom = useCallback((offset: number) => {
     const ctx = ctxRef.current;
@@ -150,7 +168,6 @@ export default function EventPanel({ event, onClose }: Props) {
       if (sourceRef.current === source) {
         cancelAnimationFrame(rafRef.current);
         sourceRef.current = null;
-        setPlaying(false);
       }
     };
     sourceRef.current = source;
@@ -167,6 +184,7 @@ export default function EventPanel({ event, onClose }: Props) {
     setAudioReady(false);
     setPlaying(false);
     setActiveTranscriptIdx(transcriptIdx);
+    activeIdxRef.current = transcriptIdx;
     bufferRef.current = null;
     loadingUrlRef.current = audioUrl;
 
@@ -193,6 +211,7 @@ export default function EventPanel({ event, onClose }: Props) {
       })
       .catch(() => {});
   }, [stopSource, playFrom]);
+  loadAndPlayRef.current = loadAndPlay;
 
   const handleSegmentClick = useCallback((fs: FlatSegment) => {
     if (fs.transcriptIdx === activeTranscriptIdx && audioReady) {
@@ -210,8 +229,11 @@ export default function EventPanel({ event, onClose }: Props) {
     } else if (audioReady) {
       if (ctxRef.current?.state === "suspended") await ctxRef.current.resume();
       playFrom(offsetRef.current);
+    } else if (transcriptsRef.current.length > 0) {
+      const first = transcriptsRef.current[0]!;
+      loadAndPlay(first.audio_url, first.duration_ms, 0, 0);
     }
-  }, [playing, audioReady, stopSource, playFrom]);
+  }, [playing, audioReady, stopSource, playFrom, loadAndPlay]);
 
   useEffect(() => {
     if (event) {
