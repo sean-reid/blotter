@@ -63,7 +63,7 @@ export async function fetchEvents(
       ` OR feed_id ILIKE {search:String})`;
   }
 
-  sql += ` ORDER BY event_ts DESC LIMIT 5000`;
+  sql += ` ORDER BY event_ts DESC LIMIT 1 BY feed_id, archive_ts LIMIT 5000`;
   return query<ScannerEvent>(sql, params);
 }
 
