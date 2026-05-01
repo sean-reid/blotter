@@ -168,6 +168,11 @@ export default function EventPanel({ event, onClose }: Props) {
       if (sourceRef.current === source) {
         cancelAnimationFrame(rafRef.current);
         sourceRef.current = null;
+        if (autoAdvanceRef.current) {
+          advanceToNext();
+        } else {
+          setPlaying(false);
+        }
       }
     };
     sourceRef.current = source;
