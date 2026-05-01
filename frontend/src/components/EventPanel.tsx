@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ScannerEvent, TranscriptResult, TranscriptSegment } from "../lib/types";
-import { fetchTranscriptForEvent } from "../lib/api";
+import { fetchSurroundingTranscripts } from "../lib/api";
 import Tags from "./Tags";
 import TranscriptPlayer from "./TranscriptPlayer";
 
@@ -37,10 +37,20 @@ function parseSegments(raw: string): TranscriptSegment[] {
   }
 }
 
+function formatTime(ts: string): string {
+  const utc = ts.includes("Z") || ts.includes("+") ? ts : ts.replace(" ", "T") + "Z";
+  return new Date(utc).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 export default function EventPanel({ event, onClose }: Props) {
   const [visible, setVisible] = useState(false);
-  const [transcript, setTranscript] = useState<TranscriptResult | null>(null);
+  const [transcripts, setTranscripts] = useState<TranscriptResult[]>([]);
   const [loadingTranscript, setLoadingTranscript] = useState(false);
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const [dragY, setDragY] = useState(0);
   const dragStartY = useRef(0);
   const dragging = useRef(false);
@@ -49,15 +59,31 @@ export default function EventPanel({ event, onClose }: Props) {
     if (event) {
       requestAnimationFrame(() => { setVisible(true); });
       setLoadingTranscript(true);
-      setTranscript(null);
+      setTranscripts([]);
+      setExpandedIdx(null);
       setDragY(0);
-      fetchTranscriptForEvent(event.feed_id, event.archive_ts)
-        .then(setTranscript)
-        .catch(() => setTranscript(null))
+      fetchSurroundingTranscripts(event.feed_id, event.archive_ts)
+        .then((results) => {
+          setTranscripts(results);
+          if (results.length > 0) {
+            let closest = 0;
+            let minDiff = Infinity;
+            const eventTs = new Date(event.archive_ts.includes("Z") || event.archive_ts.includes("+") ? event.archive_ts : event.archive_ts.replace(" ", "T") + "Z").getTime();
+            for (let i = 0; i < results.length; i++) {
+              const ts = results[i]!.archive_ts;
+              const t = new Date(ts.includes("Z") || ts.includes("+") ? ts : ts.replace(" ", "T") + "Z").getTime();
+              const diff = Math.abs(t - eventTs);
+              if (diff < minDiff) { minDiff = diff; closest = i; }
+            }
+            setExpandedIdx(closest);
+          }
+        })
+        .catch(() => setTranscripts([]))
         .finally(() => setLoadingTranscript(false));
     } else {
       setVisible(false);
-      setTranscript(null);
+      setTranscripts([]);
+      setExpandedIdx(null);
     }
   }, [event]);
 
@@ -170,15 +196,6 @@ export default function EventPanel({ event, onClose }: Props) {
             </div>
           </div>
 
-          {event.context && !transcript && !loadingTranscript && (
-            <div>
-              <FieldLabel>Dispatch context</FieldLabel>
-              <div className="text-[13px] leading-relaxed text-[#adbac7] italic">
-                {event.context}
-              </div>
-            </div>
-          )}
-
           <div>
             <FieldLabel>Time</FieldLabel>
             <div className="text-sm text-[#adbac7] tabular-nums">
@@ -189,30 +206,63 @@ export default function EventPanel({ event, onClose }: Props) {
           <div>
             <FieldLabel>Feed</FieldLabel>
             <div className="text-sm text-[#adbac7]">
-              {transcript?.feed_name || event.feed_id}
+              {transcripts[0]?.feed_name || event.feed_id}
             </div>
           </div>
 
-          {(event.tags || transcript?.tags) && (
+          {event.tags && (
             <div>
               <FieldLabel>Codes</FieldLabel>
-              <Tags tags={transcript?.tags || event.tags} />
+              <Tags tags={event.tags} />
             </div>
           )}
 
           <div>
-            <FieldLabel>Audio</FieldLabel>
+            <FieldLabel>Dispatch ({transcripts.length})</FieldLabel>
             {loadingTranscript ? (
               <div className="text-xs text-[#545d68] italic">Loading...</div>
-            ) : transcript ? (
-              <TranscriptPlayer
-                audioUrl={transcript.audio_url}
-                segments={parseSegments(transcript.segments)}
-                context={event.context}
-                durationMs={transcript.duration_ms}
-              />
+            ) : transcripts.length > 0 ? (
+              <div className="space-y-2">
+                {transcripts.map((t, i) => {
+                  const isExpanded = expandedIdx === i;
+                  return (
+                    <div key={`${t.feed_id}-${t.archive_ts}`} className="rounded border border-[#2d333b] overflow-hidden">
+                      <button
+                        onClick={() => setExpandedIdx(isExpanded ? null : i)}
+                        className={`
+                          w-full text-left px-3 py-2 flex items-center justify-between gap-2
+                          transition-colors duration-100
+                          ${isExpanded ? "bg-[#539bf5]/10" : "hover:bg-[#1c2128]"}
+                        `}
+                      >
+                        <span className="text-[12px] tabular-nums text-[#adbac7]">
+                          {formatTime(t.archive_ts)}
+                        </span>
+                        <span className="text-[12px] text-[#545d68] truncate flex-1 text-right">
+                          {t.transcript.slice(0, 60)}{t.transcript.length > 60 ? "..." : ""}
+                        </span>
+                        <svg
+                          className={`w-3 h-3 shrink-0 text-[#545d68] transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`}
+                          fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                      {isExpanded && (
+                        <div className="px-3 pb-3 pt-1">
+                          <TranscriptPlayer
+                            audioUrl={t.audio_url}
+                            segments={parseSegments(t.segments)}
+                            durationMs={t.duration_ms}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
-              <div className="text-xs text-[#545d68] italic">No audio available</div>
+              <div className="text-xs text-[#545d68] italic">No transcripts available</div>
             )}
           </div>
         </div>

@@ -83,6 +83,23 @@ export async function fetchTranscriptForEvent(
   return results[0] ?? null;
 }
 
+export async function fetchSurroundingTranscripts(
+  feedId: string,
+  archiveTs: string,
+  windowMinutes: number = 2,
+): Promise<TranscriptResult[]> {
+  const sql =
+    `SELECT feed_id, feed_name, archive_ts, duration_ms, audio_url, transcript, segments, tags, '' AS context ` +
+    `FROM blotter.scanner_transcripts ` +
+    `WHERE feed_id = {feedId:String} ` +
+    `AND length(transcript) > 0 ` +
+    `AND archive_ts BETWEEN toDateTime64({archiveTs:String}, 3) - INTERVAL {window:UInt32} MINUTE ` +
+    `AND toDateTime64({archiveTs:String}, 3) + INTERVAL {window:UInt32} MINUTE ` +
+    `ORDER BY archive_ts ASC ` +
+    `LIMIT 20`;
+  return query<TranscriptResult>(sql, { feedId, archiveTs, window: String(windowMinutes) });
+}
+
 export async function fetchEventForTranscript(
   feedId: string,
   archiveTs: string,
