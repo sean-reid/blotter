@@ -161,7 +161,7 @@ def run_processor(
             events = []
             batch_coords: list[tuple[float, float]] = []
             for e in entities:
-                result = geocoder.geocode(e, feed_name=task.feed_name)
+                result = geocoder.geocode(e, feed_name=task.feed_name, feed_id=task.feed_id)
                 if result is None:
                     continue
                 lat, lon, name = result

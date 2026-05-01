@@ -17,10 +17,7 @@ from blotter.queue import enqueue_chunk
 
 log = get_logger(__name__)
 
-TALKGROUP_NAMES: dict[str, dict[int, str]] = {
-    "lapdvalley": {},
-    "lapdwest": {},
-}
+TALKGROUP_NAMES: dict[str, dict[int, str]] = {}
 
 
 def _talkgroup_label(system: str, tg_num: int) -> str:
@@ -34,6 +31,17 @@ def _system_display_name(system: str) -> str:
     names = {
         "lapdvalley": "LAPD Valley Bureau",
         "lapdwest": "LAPD West Bureau",
+        "chi_cpd": "Chicago Police",
+        "cltp25": "Charlotte-Mecklenburg Police",
+        "philly": "Philadelphia Police",
+        "psern1": "Seattle PSERN",
+        "sfp25": "San Francisco Police",
+        "pgcomd": "Prince George's County",
+        "pdx2": "Portland Police",
+        "ntirnd1": "Dallas Police",
+        "nwhc": "NW Harris County",
+        "dane_com": "Dane County",
+        "monroecony": "Monroe County",
     }
     return names.get(system, system)
 

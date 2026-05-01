@@ -105,6 +105,84 @@ DIVISIONS: dict[str, DivisionGeo] = {
 }
 
 
+@dataclass(frozen=True)
+class SystemRegion:
+    suffix: str
+    bias_south: float
+    bias_west: float
+    bias_north: float
+    bias_east: float
+
+    @property
+    def places_bias(self) -> str:
+        return f"rectangle:{self.bias_south},{self.bias_west}|{self.bias_north},{self.bias_east}"
+
+    def contains(self, lat: float, lon: float) -> bool:
+        return (self.bias_south - 0.15 <= lat <= self.bias_north + 0.15
+                and self.bias_west - 0.15 <= lon <= self.bias_east + 0.15)
+
+
+SYSTEM_REGIONS: dict[str, SystemRegion] = {
+    "lapdvalley": SystemRegion(
+        suffix="San Fernando Valley, CA",
+        bias_south=34.02, bias_west=-118.77, bias_north=34.45, bias_east=-118.25,
+    ),
+    "lapdwest": SystemRegion(
+        suffix="West Los Angeles, CA",
+        bias_south=33.83, bias_west=-118.62, bias_north=34.23, bias_east=-118.17,
+    ),
+    "chi_cpd": SystemRegion(
+        suffix="Chicago, IL",
+        bias_south=41.64, bias_west=-87.84, bias_north=42.02, bias_east=-87.52,
+    ),
+    "cltp25": SystemRegion(
+        suffix="Charlotte, NC",
+        bias_south=35.05, bias_west=-81.01, bias_north=35.39, bias_east=-80.66,
+    ),
+    "philly": SystemRegion(
+        suffix="Philadelphia, PA",
+        bias_south=39.87, bias_west=-75.28, bias_north=40.14, bias_east=-74.96,
+    ),
+    "psern1": SystemRegion(
+        suffix="Seattle, WA",
+        bias_south=47.40, bias_west=-122.46, bias_north=47.78, bias_east=-122.10,
+    ),
+    "sfp25": SystemRegion(
+        suffix="San Francisco, CA",
+        bias_south=37.70, bias_west=-122.52, bias_north=37.83, bias_east=-122.35,
+    ),
+    "pgcomd": SystemRegion(
+        suffix="Prince George's County, MD",
+        bias_south=38.55, bias_west=-77.05, bias_north=39.00, bias_east=-76.65,
+    ),
+    "pdx2": SystemRegion(
+        suffix="Portland, OR",
+        bias_south=45.43, bias_west=-122.84, bias_north=45.65, bias_east=-122.47,
+    ),
+    "ntirnd1": SystemRegion(
+        suffix="Dallas, TX",
+        bias_south=32.62, bias_west=-97.00, bias_north=33.02, bias_east=-96.56,
+    ),
+    "nwhc": SystemRegion(
+        suffix="Harris County, TX",
+        bias_south=29.55, bias_west=-95.80, bias_north=30.15, bias_east=-95.20,
+    ),
+    "dane_com": SystemRegion(
+        suffix="Madison, WI",
+        bias_south=42.95, bias_west=-89.58, bias_north=43.20, bias_east=-89.20,
+    ),
+    "monroecony": SystemRegion(
+        suffix="Rochester, NY",
+        bias_south=43.05, bias_west=-77.75, bias_north=43.35, bias_east=-77.40,
+    ),
+}
+
+
+def _match_system(feed_id: str) -> SystemRegion | None:
+    system = feed_id.rsplit("-", 1)[0] if "-" in feed_id else feed_id
+    return SYSTEM_REGIONS.get(system)
+
+
 def _match_division(feed_name: str) -> DivisionGeo | None:
     lower = feed_name.lower()
     for key, div in DIVISIONS.items():
@@ -135,10 +213,12 @@ class Geocoder:
     def __init__(self, config: GoogleGeocodingConfig, region: RegionConfig) -> None:
         self.api_key = config.api_key
         self.region = region
-        self._bbox = box(region.bbox_west, region.bbox_south, region.bbox_east, region.bbox_north)
+        self._default_bbox = box(region.bbox_west, region.bbox_south, region.bbox_east, region.bbox_north)
 
-    def _in_bounds(self, lat: float, lon: float) -> bool:
-        return self._bbox.contains(Point(lon, lat))
+    def _in_bounds(self, lat: float, lon: float, system_region: SystemRegion | None = None) -> bool:
+        if system_region:
+            return system_region.contains(lat, lon)
+        return self._default_bbox.contains(Point(lon, lat))
 
     @lru_cache(maxsize=4096)
     def _places_lookup(self, query: str, bias: str | None = None) -> PlaceResult | None:
@@ -176,8 +256,9 @@ class Geocoder:
     def _resolve(
         self, query: str, label: str,
         division: DivisionGeo | None = None,
+        system_region: SystemRegion | None = None,
     ) -> tuple[float, float, str] | None:
-        bias = division.places_bias if division else None
+        bias = division.places_bias if division else (system_region.places_bias if system_region else None)
         result = self._places_lookup(query, bias)
         if result is None:
             return None
@@ -187,7 +268,7 @@ class Geocoder:
         if not _name_relevant(label, result.name):
             log.info("name mismatch", query=label[:60], result=result.name)
             return None
-        if not self._in_bounds(result.lat, result.lon):
+        if not self._in_bounds(result.lat, result.lon, system_region):
             log.debug("outside bounds", clause=label[:60], lat=result.lat, lon=result.lon)
             return None
         if division and not division.contains(result.lat, result.lon):
@@ -197,10 +278,11 @@ class Geocoder:
         log.info("resolved", clause=label[:60], name=result.name, lat=result.lat, lon=result.lon)
         return (result.lat, result.lon, result.name)
 
-    def geocode(self, location: ExtractedLocation, feed_name: str = "") -> tuple[float, float, str] | None:
+    def geocode(self, location: ExtractedLocation, feed_name: str = "", feed_id: str = "") -> tuple[float, float, str] | None:
         clause = location.normalized
         division = _match_division(feed_name) if feed_name else None
-        suffix = division.suffix if division else self.region.location_suffix
+        system_region = _match_system(feed_id) if feed_id else None
+        suffix = division.suffix if division else (system_region.suffix if system_region else self.region.location_suffix)
 
         if location.source == "nlp_intersection" and " and " in clause:
             parts = clause.split(" and ", 1)
@@ -210,12 +292,12 @@ class Geocoder:
                 f"intersection of {parts[1]} and {parts[0]}, {suffix}",
             ]
             for q in queries:
-                result = self._resolve(q, clause, division)
+                result = self._resolve(q, clause, division, system_region)
                 if result:
                     return result
             return None
 
-        result = self._resolve(f"{clause}, {suffix}", clause, division)
+        result = self._resolve(f"{clause}, {suffix}", clause, division, system_region)
         if result:
             lat, lon, name = result
             return (lat, lon, _prefer_original_name(clause, name))

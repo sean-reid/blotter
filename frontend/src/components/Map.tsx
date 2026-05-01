@@ -9,10 +9,10 @@ import MapGL, {
 } from "react-map-gl/maplibre";
 import type { ScannerEvent } from "../lib/types";
 
-const LA_CENTER = { longitude: -118.35, latitude: 34.05 };
-const LA_BOUNDS: [[number, number], [number, number]] = [
-  [-118.67, 33.7],
-  [-118.15, 34.35],
+const US_CENTER = { longitude: -98.0, latitude: 39.0 };
+const US_BOUNDS: [[number, number], [number, number]] = [
+  [-125.0, 24.5],
+  [-66.5, 49.5],
 ];
 
 interface Props {
@@ -57,7 +57,7 @@ export default function Map({ events, selectedEvent, onEventClick }: Props) {
     const map = mapRef.current;
     if (!map) return;
     if (events.length === 0) {
-      map.fitBounds(LA_BOUNDS, { padding: 40 });
+      map.fitBounds(US_BOUNDS, { padding: 40 });
       return;
     }
     const bounds = new LngLatBounds();
@@ -113,8 +113,8 @@ export default function Map({ events, selectedEvent, onEventClick }: Props) {
     <MapGL
       ref={mapRef}
       initialViewState={{
-        ...LA_CENTER,
-        zoom: 11,
+        ...US_CENTER,
+        zoom: 4,
       }}
       style={{ width: "100%", height: "100%" }}
       mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
@@ -128,7 +128,7 @@ export default function Map({ events, selectedEvent, onEventClick }: Props) {
       <div className="maplibregl-ctrl maplibregl-ctrl-group absolute left-[10px] bottom-[85px] z-10">
           <button
             onClick={fitAll}
-            title={events.length > 0 ? "Fit all events" : "Show LA County"}
+            title={events.length > 0 ? "Fit all events" : "Show US"}
             type="button"
             className="maplibregl-ctrl-icon"
             style={{
