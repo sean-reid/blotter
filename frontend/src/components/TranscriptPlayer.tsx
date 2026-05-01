@@ -394,7 +394,7 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
               }}
             >
               <div
-                className="h-full bg-[#539bf5] rounded-full transition-[width] duration-100"
+                className="h-full bg-[#539bf5] rounded-full"
                 style={{ width: `${progress * 100}%` }}
               />
             </div>

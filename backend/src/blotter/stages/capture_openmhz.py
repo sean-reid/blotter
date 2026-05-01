@@ -132,7 +132,7 @@ class OpenMhzSystemWorker:
                 log.warning("cloudflare challenge not solved, waiting longer", system=self.system)
                 page.wait_for_timeout(15000)
 
-            seen_ids: set[str] = set()
+            seen_key = f"blotter:openmhz:seen:{self.system}"
             last_time = int(time.time() * 1000)
 
             log.info("browser polling started", system=self.system)
@@ -170,9 +170,10 @@ class OpenMhzSystemWorker:
 
                     for call in calls:
                         call_id = call.get("_id", "")
-                        if call_id in seen_ids:
+                        if not call_id or self.redis.sismember(seen_key, call_id):
                             continue
-                        seen_ids.add(call_id)
+                        self.redis.sadd(seen_key, call_id)
+                        self.redis.expire(seen_key, 86400)
                         new_calls += 1
 
                         try:
@@ -192,10 +193,8 @@ class OpenMhzSystemWorker:
                             log.error("call processing failed", system=self.system, exc_info=True)
 
                     if new_calls:
-                        log.info("poll cycle", system=self.system, new_calls=new_calls, total_seen=len(seen_ids))
-
-                    if len(seen_ids) > 10000:
-                        seen_ids = set(list(seen_ids)[-5000:])
+                        seen_count = self.redis.scard(seen_key)
+                        log.info("poll cycle", system=self.system, new_calls=new_calls, total_seen=seen_count)
 
                 except Exception:
                     log.warning("poll cycle failed", system=self.system, exc_info=True)

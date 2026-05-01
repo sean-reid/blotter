@@ -7,7 +7,7 @@ from blotter.config import (
     ClickHouseConfig, GCSConfig, GoogleGeocodingConfig, GoogleNLPConfig,
     OpenMhzConfig, RedisConfig, RegionConfig, StreamConfig, TranscriptionConfig,
 )
-from blotter.db import get_client, has_recent_event, insert_events, insert_transcript
+from blotter.db import get_client, has_recent_event, insert_events, insert_transcript, transcript_exists
 from blotter.gcs import get_storage
 from blotter.log import get_logger
 from blotter.models import GeocodedEvent, Transcript, TranscriptTask
@@ -81,6 +81,10 @@ def run_transcriber(
             continue
 
         try:
+            if transcript_exists(ch, task.feed_id, str(task.chunk_ts)):
+                log.debug("skipping duplicate transcript", feed_id=task.feed_id, archive_ts=str(task.chunk_ts))
+                continue
+
             segments, full_text, actual_duration_ms = transcriber.process_chunk(task)
 
             if not full_text:
