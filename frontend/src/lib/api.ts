@@ -40,7 +40,7 @@ export async function fetchEvents(
   let sql =
     `SELECT e.feed_id, e.archive_ts, e.event_ts, e.raw_location, e.normalized, ` +
     `e.latitude, e.longitude, e.confidence, e.context, e.tags ` +
-    `FROM blotter.scanner_events e ` +
+    `FROM blotter_staging.scanner_events e ` +
     `WHERE e.event_ts BETWEEN fromUnixTimestamp({startTs:UInt64}) AND fromUnixTimestamp({endTs:UInt64})`;
 
   if (bounds) {
@@ -72,7 +72,7 @@ export async function fetchTranscriptForEvent(
 ): Promise<TranscriptResult | null> {
   const sql =
     `SELECT feed_id, feed_name, archive_ts, duration_ms, audio_url, transcript, segments, tags, '' AS context ` +
-    `FROM blotter.scanner_transcripts ` +
+    `FROM blotter_staging.scanner_transcripts ` +
     `WHERE feed_id = {feedId:String} ` +
     `AND length(transcript) > 0 ` +
     `AND abs(toInt64(archive_ts) - toInt64(toDateTime64({archiveTs:String}, 3))) < 120 ` +
@@ -89,7 +89,7 @@ export async function fetchEventForTranscript(
   const sql =
     `SELECT feed_id, archive_ts, event_ts, raw_location, normalized, ` +
     `latitude, longitude, confidence, context, tags ` +
-    `FROM blotter.scanner_events ` +
+    `FROM blotter_staging.scanner_events ` +
     `WHERE feed_id = {feedId:String} ` +
     `AND abs(toInt64(toDateTime64(archive_ts, 3)) - toInt64(toDateTime64({archiveTs:String}, 3))) < 120 ` +
     `ORDER BY abs(toInt64(toDateTime64(archive_ts, 3)) - toInt64(toDateTime64({archiveTs:String}, 3))) ASC ` +
@@ -121,7 +121,7 @@ export async function searchTranscripts(
 
   let sql =
     `SELECT feed_id, feed_name, archive_ts, duration_ms, audio_url, transcript, segments, tags, ${contextExpr} ` +
-    `FROM blotter.scanner_transcripts ` +
+    `FROM blotter_staging.scanner_transcripts ` +
     `WHERE length(transcript) > 0 ` +
     `AND archive_ts BETWEEN fromUnixTimestamp({startTs:UInt64}) AND fromUnixTimestamp({endTs:UInt64})`;
 

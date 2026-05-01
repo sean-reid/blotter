@@ -1,4 +1,4 @@
-import asyncio
+import json
 import signal
 import subprocess
 import tempfile
@@ -44,7 +44,7 @@ def _feed_name(system: str, tg_num: int) -> str:
     return f"{display} - {label}"
 
 
-def _convert_m4a_to_wav(m4a_path: Path, wav_path: Path) -> bool:
+def _convert_to_wav(m4a_path: Path, wav_path: Path) -> bool:
     try:
         subprocess.run(
             [
@@ -78,7 +78,6 @@ class OpenMhzSystemWorker:
         self._stop = Event()
         self._thread: Thread | None = None
         self._chunk_index = 0
-        self._last_call_time: float = 0
 
     def start(self) -> None:
         self._thread = Thread(
@@ -96,10 +95,7 @@ class OpenMhzSystemWorker:
         consecutive_failures = 0
         while not self._stop.is_set():
             try:
-                if self.config.use_socketio:
-                    self._run_socketio()
-                else:
-                    self._run_polling()
+                self._run_browser_poll()
                 consecutive_failures = 0
             except Exception:
                 consecutive_failures += 1
@@ -113,84 +109,100 @@ class OpenMhzSystemWorker:
                 )
                 self._stop.wait(delay)
 
-    def _run_socketio(self) -> None:
-        import socketio
+    def _run_browser_poll(self) -> None:
+        from playwright.sync_api import sync_playwright
 
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-blink-features=AutomationControlled"],
+            )
+            ctx = browser.new_context(
+                user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            )
+            page = ctx.new_page()
 
-        sio = socketio.AsyncClient(
-            reconnection=True,
-            reconnection_attempts=0,
-            reconnection_delay=5,
-            reconnection_delay_max=60,
-        )
+            seed_url = f"{self.config.api_url}/{self.system}/calls/newer?time=0"
+            log.info("browser navigating to seed URL", system=self.system)
+            page.goto(seed_url, wait_until="networkidle", timeout=30000)
+            page.wait_for_timeout(5000)
 
-        @sio.on("new message")
-        async def on_call(data: dict) -> None:
-            try:
-                self._process_call(data)
-            except Exception:
-                log.error("call processing failed", system=self.system, exc_info=True)
+            title = page.title()
+            if "moment" in title.lower() or "challenge" in title.lower():
+                log.warning("cloudflare challenge not solved, waiting longer", system=self.system)
+                page.wait_for_timeout(15000)
 
-        @sio.on("connect")
-        async def on_connect() -> None:
-            log.info("socketio connected", system=self.system)
-            await sio.emit("start", {
-                "shortName": self.system,
-                "filterCode": "",
-                "filterType": "",
-                "filterStarred": False,
-            })
+            seen_ids: set[str] = set()
+            last_time = int(time.time() * 1000)
 
-        @sio.on("disconnect")
-        async def on_disconnect() -> None:
-            log.warning("socketio disconnected", system=self.system)
+            log.info("browser polling started", system=self.system)
 
-        async def main() -> None:
-            await sio.connect(self.config.api_url, transports=["websocket"])
             while not self._stop.is_set():
-                await asyncio.sleep(1)
-            await sio.disconnect()
+                try:
+                    api_url = f"{self.config.api_url}/{self.system}/calls/newer?time={last_time}"
+                    result = page.evaluate(
+                        """(url) => fetch(url, {
+                            credentials: "include",
+                            headers: { "Accept": "application/json" }
+                        }).then(r => r.text()).catch(e => JSON.stringify({error: e.message}))""",
+                        api_url,
+                    )
 
-        try:
-            loop.run_until_complete(main())
-        finally:
-            loop.close()
+                    if not result:
+                        log.warning("empty response", system=self.system)
+                        self._stop.wait(self.config.poll_interval)
+                        continue
 
-    def _run_polling(self) -> None:
-        import httpx
+                    try:
+                        data = json.loads(result)
+                    except json.JSONDecodeError:
+                        log.warning("non-json response", system=self.system, body=result[:200])
+                        self._stop.wait(self.config.poll_interval)
+                        continue
 
-        last_time = int(time.time() * 1000)
-        log.info("polling started", system=self.system)
+                    if "error" in data:
+                        log.warning("fetch error", system=self.system, error=data["error"])
+                        self._stop.wait(self.config.poll_interval)
+                        continue
 
-        while not self._stop.is_set():
-            try:
-                resp = httpx.get(
-                    f"{self.config.api_url}/{self.system}/calls/newer",
-                    params={"time": str(last_time)},
-                    headers={"User-Agent": "Mozilla/5.0 (compatible; Blotter/1.0)"},
-                    timeout=15,
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
                     calls = data.get("calls", [])
+                    new_calls = 0
+
                     for call in calls:
+                        call_id = call.get("_id", "")
+                        if call_id in seen_ids:
+                            continue
+                        seen_ids.add(call_id)
+                        new_calls += 1
+
                         try:
                             self._process_call(call)
                             call_time = call.get("time")
-                            if call_time and call_time > last_time:
-                                last_time = call_time
+                            if isinstance(call_time, str):
+                                from datetime import datetime as dt
+                                ct = dt.fromisoformat(call_time.replace("Z", "+00:00"))
+                                call_time_ms = int(ct.timestamp() * 1000)
+                            elif isinstance(call_time, (int, float)):
+                                call_time_ms = int(call_time) if call_time > 1e12 else int(call_time * 1000)
+                            else:
+                                call_time_ms = last_time
+                            if call_time_ms > last_time:
+                                last_time = call_time_ms
                         except Exception:
                             log.error("call processing failed", system=self.system, exc_info=True)
-                elif resp.status_code == 403:
-                    log.warning("cloudflare blocked, retrying", system=self.system)
-                else:
-                    log.warning("polling error", system=self.system, status=resp.status_code)
-            except Exception:
-                log.warning("polling request failed", system=self.system, exc_info=True)
 
-            self._stop.wait(self.config.poll_interval)
+                    if new_calls:
+                        log.info("poll cycle", system=self.system, new_calls=new_calls, total_seen=len(seen_ids))
+
+                    if len(seen_ids) > 10000:
+                        seen_ids = set(list(seen_ids)[-5000:])
+
+                except Exception:
+                    log.warning("poll cycle failed", system=self.system, exc_info=True)
+
+                self._stop.wait(self.config.poll_interval)
+
+            browser.close()
 
     def _process_call(self, call: dict) -> None:
         audio_url = call.get("url", "")
@@ -201,7 +213,12 @@ class OpenMhzSystemWorker:
         if not audio_url or call_len < 1:
             return
 
-        if isinstance(call_time, (int, float)):
+        if isinstance(call_time, str):
+            try:
+                ts = datetime.fromisoformat(call_time.replace("Z", "+00:00"))
+            except ValueError:
+                ts = datetime.now(timezone.utc)
+        elif isinstance(call_time, (int, float)):
             ts = datetime.fromtimestamp(call_time / 1000 if call_time > 1e12 else call_time, tz=timezone.utc)
         else:
             ts = datetime.now(timezone.utc)
@@ -211,7 +228,7 @@ class OpenMhzSystemWorker:
 
         with tempfile.TemporaryDirectory(prefix="blotter_omhz_") as tmpdir:
             tmpdir_path = Path(tmpdir)
-            m4a_path = tmpdir_path / "call.m4a"
+            m4a_path = tmpdir_path / "call.mp3"
             wav_path = tmpdir_path / "call.wav"
 
             import httpx
@@ -223,7 +240,7 @@ class OpenMhzSystemWorker:
                 log.warning("audio download failed", system=self.system, url=audio_url[:100])
                 return
 
-            if not _convert_m4a_to_wav(m4a_path, wav_path):
+            if not _convert_to_wav(m4a_path, wav_path):
                 return
 
             date_str = ts.strftime("%Y-%m-%d")

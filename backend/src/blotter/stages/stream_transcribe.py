@@ -53,10 +53,10 @@ class StreamTranscriber:
 
             segments, full_text = self._transcriber.transcribe(audio_path, feed_id=task.feed_id)
 
-        full_text = strip_ads(full_text)
-
-        full_text = self._deduplicate_boundary(task.feed_id, full_text)
-        self._prev_text[task.feed_id] = full_text
+        if self._stream_config.ad_skip_seconds > 0:
+            full_text = strip_ads(full_text)
+            full_text = self._deduplicate_boundary(task.feed_id, full_text)
+            self._prev_text[task.feed_id] = full_text
 
         if full_text:
             self._get_buffer(task.feed_id).append(full_text)
