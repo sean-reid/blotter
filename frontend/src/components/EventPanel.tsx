@@ -199,7 +199,7 @@ export default function EventPanel({ event, onClose }: Props) {
     const ctx = ctxRef.current;
     if (ctx.state === "suspended") ctx.resume();
 
-    fetch(audioUrl)
+    fetch(audioUrl, { cache: "no-store" })
       .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.arrayBuffer(); })
       .then((buf) => { if (loadingUrlRef.current !== audioUrl) return; return ctx.decodeAudioData(buf); })
       .then((decoded) => {
