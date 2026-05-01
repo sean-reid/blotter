@@ -1,6 +1,5 @@
 import signal
 import time
-from datetime import datetime, timezone
 from threading import Event
 
 from blotter.config import (
@@ -183,7 +182,7 @@ def run_processor(
                 events.append(GeocodedEvent(
                     feed_id=task.feed_id,
                     archive_ts=task.chunk_ts,
-                    event_ts=datetime.now(timezone.utc),
+                    event_ts=task.chunk_ts,
                     raw_location=e.raw_text,
                     normalized=name,
                     latitude=lat,
