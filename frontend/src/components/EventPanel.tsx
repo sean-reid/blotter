@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ScannerEvent, TranscriptResult, TranscriptSegment } from "../lib/types";
 import { fetchSurroundingTranscripts } from "../lib/api";
 import Tags from "./Tags";
-import TranscriptPlayer from "./TranscriptPlayer";
 
 interface Props {
   event: ScannerEvent | null;
@@ -46,46 +45,199 @@ function formatTime(ts: string): string {
   });
 }
 
+interface FlatSegment {
+  transcriptIdx: number;
+  seg: TranscriptSegment;
+  isFirstInCall: boolean;
+  callTime: string;
+  audioUrl: string;
+  durationMs: number;
+}
+
+function formatDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function buildFlatSegments(transcripts: TranscriptResult[]): FlatSegment[] {
+  const flat: FlatSegment[] = [];
+  for (let ti = 0; ti < transcripts.length; ti++) {
+    const t = transcripts[ti]!;
+    const segs = parseSegments(t.segments);
+    const callTime = formatTime(t.archive_ts);
+    for (let si = 0; si < segs.length; si++) {
+      flat.push({
+        transcriptIdx: ti,
+        seg: segs[si]!,
+        isFirstInCall: si === 0,
+        callTime,
+        audioUrl: t.audio_url,
+        durationMs: t.duration_ms,
+      });
+    }
+  }
+  return flat;
+}
+
 export default function EventPanel({ event, onClose }: Props) {
   const [visible, setVisible] = useState(false);
   const [transcripts, setTranscripts] = useState<TranscriptResult[]>([]);
+  const [flatSegments, setFlatSegments] = useState<FlatSegment[]>([]);
   const [loadingTranscript, setLoadingTranscript] = useState(false);
-  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const [dragY, setDragY] = useState(0);
   const dragStartY = useRef(0);
   const dragging = useRef(false);
+
+  const [activeTranscriptIdx, setActiveTranscriptIdx] = useState(-1);
+  const [playing, setPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(0);
+  const [audioReady, setAudioReady] = useState(false);
+
+  const ctxRef = useRef<AudioContext | null>(null);
+  const sourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const bufferRef = useRef<AudioBuffer | null>(null);
+  const playStartRef = useRef(0);
+  const offsetRef = useRef(0);
+  const rafRef = useRef(0);
+  const audioOffsetRef = useRef(0);
+  const activeRef = useRef<HTMLDivElement>(null);
+  const loadingUrlRef = useRef("");
+
+  const stopSource = useCallback(() => {
+    cancelAnimationFrame(rafRef.current);
+    if (sourceRef.current) {
+      try { sourceRef.current.stop(); } catch { /* */ }
+      sourceRef.current.disconnect();
+      sourceRef.current = null;
+    }
+  }, []);
+
+  const tick = useCallback(() => {
+    if (!sourceRef.current) return;
+    const pos = offsetRef.current + (performance.now() - playStartRef.current) / 1000;
+    setCurrentTime(pos);
+    const effectiveDuration = bufferRef.current
+      ? bufferRef.current.duration - audioOffsetRef.current : 0;
+    if (bufferRef.current && pos >= effectiveDuration) {
+      stopSource();
+      offsetRef.current = effectiveDuration;
+      setCurrentTime(effectiveDuration);
+      setPlaying(false);
+      return;
+    }
+    rafRef.current = requestAnimationFrame(tick);
+  }, [stopSource]);
+
+  const playFrom = useCallback((offset: number) => {
+    const ctx = ctxRef.current;
+    const buffer = bufferRef.current;
+    if (!ctx || !buffer) return;
+    stopSource();
+    const audioPos = Math.max(0, Math.min(offset + audioOffsetRef.current, buffer.duration));
+    const startSample = Math.floor(audioPos * buffer.sampleRate);
+    const trimmedLength = buffer.length - startSample;
+    if (trimmedLength <= 0) return;
+    const trimmed = ctx.createBuffer(buffer.numberOfChannels, trimmedLength, buffer.sampleRate);
+    for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+      trimmed.getChannelData(ch).set(buffer.getChannelData(ch).subarray(startSample));
+    }
+    const source = ctx.createBufferSource();
+    source.buffer = trimmed;
+    source.connect(ctx.destination);
+    source.onended = () => {
+      if (sourceRef.current === source) {
+        cancelAnimationFrame(rafRef.current);
+        sourceRef.current = null;
+        setPlaying(false);
+      }
+    };
+    sourceRef.current = source;
+    offsetRef.current = offset;
+    playStartRef.current = performance.now();
+    source.start(0);
+    setPlaying(true);
+    rafRef.current = requestAnimationFrame(tick);
+  }, [stopSource, tick]);
+
+  const loadAndPlay = useCallback((audioUrl: string, durationMs: number, transcriptIdx: number, seekTo: number) => {
+    if (!audioUrl) return;
+    stopSource();
+    setAudioReady(false);
+    setPlaying(false);
+    setActiveTranscriptIdx(transcriptIdx);
+    bufferRef.current = null;
+    loadingUrlRef.current = audioUrl;
+
+    if (!ctxRef.current) ctxRef.current = new AudioContext();
+    const ctx = ctxRef.current;
+    if (ctx.state === "suspended") ctx.resume();
+
+    fetch(audioUrl)
+      .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.arrayBuffer(); })
+      .then((buf) => { if (loadingUrlRef.current !== audioUrl) return; return ctx.decodeAudioData(buf); })
+      .then((decoded) => {
+        if (!decoded || loadingUrlRef.current !== audioUrl) return;
+        bufferRef.current = decoded;
+        if (durationMs > 0) {
+          const expected = durationMs / 1000;
+          const diff = decoded.duration - expected;
+          audioOffsetRef.current = diff > 5 ? diff : 0;
+        } else {
+          audioOffsetRef.current = 0;
+        }
+        setAudioDuration(decoded.duration - audioOffsetRef.current);
+        setAudioReady(true);
+        playFrom(seekTo);
+      })
+      .catch(() => {});
+  }, [stopSource, playFrom]);
+
+  const handleSegmentClick = useCallback((fs: FlatSegment) => {
+    if (fs.transcriptIdx === activeTranscriptIdx && audioReady) {
+      playFrom(fs.seg.start);
+    } else {
+      loadAndPlay(fs.audioUrl, fs.durationMs, fs.transcriptIdx, fs.seg.start);
+    }
+  }, [activeTranscriptIdx, audioReady, playFrom, loadAndPlay]);
+
+  const togglePlay = useCallback(async () => {
+    if (playing) {
+      offsetRef.current += (performance.now() - playStartRef.current) / 1000;
+      stopSource();
+      setPlaying(false);
+    } else if (audioReady) {
+      if (ctxRef.current?.state === "suspended") await ctxRef.current.resume();
+      playFrom(offsetRef.current);
+    }
+  }, [playing, audioReady, stopSource, playFrom]);
 
   useEffect(() => {
     if (event) {
       requestAnimationFrame(() => { setVisible(true); });
       setLoadingTranscript(true);
       setTranscripts([]);
-      setExpandedIdx(null);
+      setFlatSegments([]);
       setDragY(0);
+      setActiveTranscriptIdx(-1);
+      setPlaying(false);
+      setAudioReady(false);
+      stopSource();
       fetchSurroundingTranscripts(event.feed_id, event.archive_ts)
         .then((results) => {
           setTranscripts(results);
-          if (results.length > 0) {
-            let closest = 0;
-            let minDiff = Infinity;
-            const eventTs = new Date(event.archive_ts.includes("Z") || event.archive_ts.includes("+") ? event.archive_ts : event.archive_ts.replace(" ", "T") + "Z").getTime();
-            for (let i = 0; i < results.length; i++) {
-              const ts = results[i]!.archive_ts;
-              const t = new Date(ts.includes("Z") || ts.includes("+") ? ts : ts.replace(" ", "T") + "Z").getTime();
-              const diff = Math.abs(t - eventTs);
-              if (diff < minDiff) { minDiff = diff; closest = i; }
-            }
-            setExpandedIdx(closest);
-          }
+          setFlatSegments(buildFlatSegments(results));
         })
-        .catch(() => setTranscripts([]))
+        .catch(() => { setTranscripts([]); setFlatSegments([]); })
         .finally(() => setLoadingTranscript(false));
     } else {
       setVisible(false);
       setTranscripts([]);
-      setExpandedIdx(null);
+      setFlatSegments([]);
+      stopSource();
     }
-  }, [event]);
+  }, [event, stopSource]);
 
   useEffect(() => {
     if (!event) return;
@@ -218,48 +370,82 @@ export default function EventPanel({ event, onClose }: Props) {
           )}
 
           <div>
-            <FieldLabel>Dispatch ({transcripts.length})</FieldLabel>
+            <FieldLabel>Dispatch ({transcripts.length} calls)</FieldLabel>
             {loadingTranscript ? (
               <div className="text-xs text-[#545d68] italic">Loading...</div>
-            ) : transcripts.length > 0 ? (
+            ) : flatSegments.length > 0 ? (
               <div className="space-y-2">
-                {transcripts.map((t, i) => {
-                  const isExpanded = expandedIdx === i;
-                  return (
-                    <div key={`${t.feed_id}-${t.archive_ts}`} className="rounded border border-[#2d333b] overflow-hidden">
-                      <button
-                        onClick={() => setExpandedIdx(isExpanded ? null : i)}
-                        className={`
-                          w-full text-left px-3 py-2 flex items-center justify-between gap-2
-                          transition-colors duration-100
-                          ${isExpanded ? "bg-[#539bf5]/10" : "hover:bg-[#1c2128]"}
-                        `}
-                      >
-                        <span className="text-[12px] tabular-nums text-[#adbac7]">
-                          {formatTime(t.archive_ts)}
-                        </span>
-                        <span className="text-[12px] text-[#545d68] truncate flex-1 text-right">
-                          {t.transcript.slice(0, 60)}{t.transcript.length > 60 ? "..." : ""}
-                        </span>
-                        <svg
-                          className={`w-3 h-3 shrink-0 text-[#545d68] transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`}
-                          fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                {audioReady && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={togglePlay}
+                      className="w-7 h-7 flex items-center justify-center rounded bg-[#2d333b] hover:bg-[#373e47] text-[#adbac7] transition-colors"
+                    >
+                      {playing ? (
+                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                          <rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" />
                         </svg>
-                      </button>
-                      {isExpanded && (
-                        <div className="px-3 pb-3 pt-1">
-                          <TranscriptPlayer
-                            audioUrl={t.audio_url}
-                            segments={parseSegments(t.segments)}
-                            durationMs={t.duration_ms}
-                          />
-                        </div>
+                      ) : (
+                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
                       )}
+                    </button>
+                    <div
+                      className="flex-1 h-1 bg-[#2d333b] rounded-full overflow-hidden cursor-pointer"
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const pct = (e.clientX - rect.left) / rect.width;
+                        const t = pct * audioDuration;
+                        offsetRef.current = t;
+                        setCurrentTime(t);
+                        if (playing) playFrom(t);
+                      }}
+                    >
+                      <div
+                        className="h-full bg-[#539bf5] rounded-full"
+                        style={{ width: `${audioDuration > 0 ? Math.min(1, currentTime / audioDuration) * 100 : 0}%` }}
+                      />
                     </div>
-                  );
-                })}
+                    <span className="text-[10px] tabular-nums text-[#545d68] min-w-[60px] text-right">
+                      {formatDuration(currentTime)} / {formatDuration(audioDuration)}
+                    </span>
+                  </div>
+                )}
+
+                <div className="max-h-[400px] overflow-y-auto space-y-0">
+                  {flatSegments.map((fs, i) => {
+                    const isActive = fs.transcriptIdx === activeTranscriptIdx
+                      && currentTime >= fs.seg.start && currentTime < fs.seg.end;
+                    return (
+                      <div key={i}>
+                        {fs.isFirstInCall && (
+                          <div className="flex items-center gap-2 py-1.5 mt-1 first:mt-0">
+                            <span className="text-[10px] tabular-nums text-[#545d68]">{fs.callTime}</span>
+                            <div className="flex-1 h-px bg-[#2d333b]" />
+                          </div>
+                        )}
+                        <div
+                          ref={isActive ? activeRef : undefined}
+                          onClick={() => handleSegmentClick(fs)}
+                          className={`
+                            flex gap-2 px-2 py-1 rounded cursor-pointer
+                            transition-colors duration-100
+                            ${isActive
+                              ? "bg-[#539bf5]/10 text-[#e6edf3]"
+                              : "text-[#adbac7] hover:bg-[#2d333b]/50"
+                            }
+                          `}
+                        >
+                          <span className="text-[10px] tabular-nums text-[#545d68] pt-0.5 shrink-0">
+                            {formatDuration(fs.seg.start)}
+                          </span>
+                          <span className="text-[12px] leading-relaxed">{fs.seg.text}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             ) : (
               <div className="text-xs text-[#545d68] italic">No transcripts available</div>
