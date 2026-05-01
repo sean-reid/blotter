@@ -124,7 +124,7 @@ def fetch_surrounding_context(
 ) -> str:
     ts_clean = archive_ts.replace("+00:00", "").replace("Z", "")
     result = client.query(
-        "SELECT archive_ts, transcript FROM scanner_transcripts "
+        "SELECT transcript FROM scanner_transcripts "
         "WHERE feed_id = {feed_id:String} "
         "AND archive_ts BETWEEN toDateTime64({ts:String}, 3) - INTERVAL {window:UInt32} MINUTE "
         "AND toDateTime64({ts:String}, 3) + INTERVAL {window:UInt32} MINUTE "
@@ -138,14 +138,8 @@ def fetch_surrounding_context(
             "limit": max_rows,
         },
     )
-    parts = []
-    for row in result.result_rows:
-        text = row[1].strip()
-        if not text:
-            continue
-        ts_label = str(row[0]).split(" ")[-1] if row[0] else ""
-        parts.append(f"[{ts_label}] {text}" if ts_label else text)
-    return " /// ".join(parts)
+    texts = [row[0] for row in result.result_rows if row[0].strip()]
+    return " /// ".join(texts)
 
 
 def get_latest_transcript(client: Client, feed_id: str) -> dict | None:
