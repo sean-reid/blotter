@@ -5,7 +5,7 @@ from threading import Event
 
 from blotter.config import (
     ClickHouseConfig, GCSConfig, GoogleGeocodingConfig, GoogleNLPConfig,
-    RedisConfig, RegionConfig, StreamConfig, TranscriptionConfig,
+    OpenMhzConfig, RedisConfig, RegionConfig, StreamConfig, TranscriptionConfig,
 )
 from blotter.db import get_client, has_recent_event, insert_events, insert_transcript
 from blotter.gcs import get_storage
@@ -16,6 +16,7 @@ from blotter.queue import (
     queue_depth, CAPTURE_QUEUE, TRANSCRIPT_QUEUE,
 )
 from blotter.stages.capture import CaptureManager
+from blotter.stages.capture_openmhz import OpenMhzCaptureManager
 from blotter.stages.extract import extract_clauses
 from blotter.stages.extract_codes import extract_codes
 from blotter.stages.extract_nlp import extract_entities
@@ -44,6 +45,15 @@ def run_capture(
     redis_config: RedisConfig,
 ) -> None:
     manager = CaptureManager(stream_config, gcs_config, redis_config)
+    manager.start()
+
+
+def run_capture_openmhz(
+    openmhz_config: OpenMhzConfig,
+    gcs_config: GCSConfig,
+    redis_config: RedisConfig,
+) -> None:
+    manager = OpenMhzCaptureManager(openmhz_config, gcs_config, redis_config)
     manager.start()
 
 
