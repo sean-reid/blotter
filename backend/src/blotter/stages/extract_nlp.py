@@ -72,7 +72,11 @@ SKIP_NAMES = {
     "south", "north", "east", "west",
     "southwest", "southeast", "northeast", "northwest",
 
-    # LAPD divisions / bureaus (not street addresses)
+    # Police divisions / bureaus / districts (not street addresses)
+    "division", "bureau", "station", "frequency",
+    "precinct", "district", "sector", "zone", "battalion",
+
+    # LAPD divisions
     "central", "pacific", "rampart", "hollenbeck", "harbor",
     "hollywood", "wilshire", "devonshire", "foothill", "topanga",
     "newton", "olympic", "mission", "van nuys",
@@ -80,9 +84,8 @@ SKIP_NAMES = {
     "south valley", "north valley", "east valley",
     "77th street", "south bureau", "west bureau", "valley bureau",
     "central bureau",
-    "division", "bureau", "station", "frequency",
 
-    # LAPD station names (NLP extracts these as locations)
+    # LAPD station names
     "hollywood station", "wilshire station", "pacific station",
     "rampart station", "hollenbeck station", "harbor station",
     "newton station", "olympic station", "devonshire station",
@@ -91,8 +94,45 @@ SKIP_NAMES = {
     "west la station", "77th street station", "southeast station",
     "southwest station", "central station",
 
-    # LAPD phonetic alphabet (standalone)
+    # Chicago PD districts / areas
+    "area north", "area central", "area south",
+    "district 1", "district 2", "district 3", "district 4", "district 5",
+    "district 6", "district 7", "district 8", "district 9", "district 10",
+    "district 11", "district 12", "district 14", "district 15",
+    "district 16", "district 17", "district 18", "district 19",
+    "district 20", "district 22", "district 24", "district 25",
+
+    # Charlotte CMPD divisions
+    "metro division", "freedom division", "north tryon division",
+    "providence division", "south division", "steele creek division",
+    "university city division", "westover division",
+
+    # Philadelphia PPD districts
+    "east division", "northwest division", "south division",
+    "southwest division", "northeast division",
+
+    # Seattle precincts
+    "north precinct", "south precinct", "east precinct",
+    "west precinct", "southwest precinct",
+
+    # San Francisco SFPD districts
+    "bayview station", "central station", "ingleside station",
+    "mission station", "northern station", "park station",
+    "richmond station", "southern station", "taraval station",
+    "tenderloin station",
+
+    # Portland PPB precincts
+    "central precinct", "east precinct", "north precinct",
+
+    # Dallas DPD divisions
+    "northeast division", "northwest division", "south central division",
+    "southeast division", "southwest division",
+
+    # Phonetic alphabet (standalone)
     "charles", "adam", "lincoln", "mary", "boy", "king", "tom",
+    "david", "edward", "frank", "george", "henry", "ocean", "paul",
+    "robert", "sam", "william", "victor", "nora", "ida", "john",
+    "queen", "union", "young", "zebra",
 
     # dispatch vocabulary
     "unit", "dispatch", "ambulance", "backup", "custody",

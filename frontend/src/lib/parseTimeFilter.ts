@@ -99,6 +99,12 @@ export function parseTimeFilter(input: string): ParseResult {
   const parsed = chrono.parse(input, new Date(), { forwardDate: false });
   if (parsed.length > 0) {
     const result = parsed[0]!;
+    const matchEnd = result.index + result.text.length;
+    const before = result.index > 0 ? input[result.index - 1]! : " ";
+    const after = matchEnd < input.length ? input[matchEnd]! : " ";
+    if (/[a-zA-Z]/.test(before) || /[a-zA-Z]/.test(after)) {
+      return { cleanQuery: input, timeRange: null, tooLarge: false };
+    }
     const startDate = result.start.date();
     const noTime = !result.start.isCertain("hour") && !result.start.isCertain("minute");
     let endDate: Date;

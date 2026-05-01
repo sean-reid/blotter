@@ -1,6 +1,7 @@
 import re
 
 POLICE_CODES: dict[str, str] = {
+    # Universal codes / 10-codes
     "code 1": "No lights/sirens",
     "code 2": "Urgent, no sirens",
     "code 3": "Lights & sirens",
@@ -35,6 +36,8 @@ POLICE_CODES: dict[str, str] = {
     "10-97": "Arrived at scene",
     "10-98": "Available",
     "10-99": "Wanted person",
+
+    # California penal codes
     "187": "Homicide",
     "207": "Kidnapping",
     "211": "Robbery",
@@ -60,6 +63,37 @@ POLICE_CODES: dict[str, str] = {
     "11-83": "Accident / no details",
     "11-85": "Tow truck needed",
     "11-99": "Officer needs help",
+
+    # Charlotte (CMPD) signal codes
+    "signal 5": "Robbery",
+    "signal 7": "Assault",
+    "signal 8": "Burglary in progress",
+    "signal 9": "Larceny in progress",
+    "signal 10": "Shooting",
+    "signal 40": "Accident w/ injuries",
+    "signal 42": "Hit and run",
+    "signal 50": "Domestic",
+
+    # Dallas (DPD) signal codes
+    "signal 25": "Burglary",
+    "signal 63": "Shooting",
+
+    # Philadelphia signal codes
+    "signal 32": "Gun involved",
+    "signal 33": "Robbery",
+
+    # PG County / Maryland
+    "signal 13": "Officer needs help",
+
+    # Rochester (Monroe County) signal codes
+    "signal 30": "Robbery",
+    "signal 31": "Burglary",
+
+    # San Francisco codes
+    "914": "Dead body",
+    "917": "Suspicious person",
+    "918": "Mental case",
+    "919": "Keep the peace",
 }
 
 _CODE_PATTERN = re.compile(
@@ -72,6 +106,15 @@ _CODE_PATTERN = re.compile(
 
 _PENAL_PATTERN = re.compile(
     r'\b(187|207|211|242|245|261|288|311|390|415|459|484|487|502|586|594|647|10851)\b'
+)
+
+_SIGNAL_PATTERN = re.compile(
+    r'\bsignal\s+(\d{1,3})\b',
+    re.IGNORECASE,
+)
+
+_SF_CODE_PATTERN = re.compile(
+    r'\b(914|917|918|919)\b'
 )
 
 
@@ -87,6 +130,14 @@ def extract_codes(text: str) -> list[str]:
             found[code.lower()] = None
 
     for m in _PENAL_PATTERN.finditer(text):
+        found[m.group(1)] = None
+
+    for m in _SIGNAL_PATTERN.finditer(text):
+        code = f"signal {m.group(1)}"
+        if code.lower() in POLICE_CODES:
+            found[code.lower()] = None
+
+    for m in _SF_CODE_PATTERN.finditer(text):
         found[m.group(1)] = None
 
     return list(found.keys())
