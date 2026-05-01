@@ -19,6 +19,10 @@ def _load_prompt_for_feed(feed_id: str | None) -> str:
         feed_file = PROMPTS_DIR / f"{feed_id}.txt"
         if feed_file.exists():
             return feed_file.read_text().strip()
+        system = feed_id.split("-")[0] if "-" in feed_id else feed_id
+        system_file = PROMPTS_DIR / f"{system}.txt"
+        if system_file.exists():
+            return system_file.read_text().strip()
     default_file = PROMPTS_DIR / "default.txt"
     if default_file.exists():
         return default_file.read_text().strip()

@@ -135,8 +135,9 @@ def get_latest_transcript(client: Client, feed_id: str) -> dict | None:
 
 
 def transcript_exists(client: Client, feed_id: str, archive_ts: str) -> bool:
+    ts_clean = archive_ts.replace("+00:00", "").replace("Z", "")
     result = client.query(
         "SELECT count() FROM scanner_transcripts WHERE feed_id = {feed_id:String} AND archive_ts = {archive_ts:String}",
-        parameters={"feed_id": feed_id, "archive_ts": archive_ts},
+        parameters={"feed_id": feed_id, "archive_ts": ts_clean},
     )
     return result.first_row[0] > 0

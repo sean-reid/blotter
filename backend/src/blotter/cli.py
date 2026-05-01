@@ -62,6 +62,7 @@ def stream_start(
     capture: bool = typer.Option(True, help="Run capture workers"),
     transcribe_worker: bool = typer.Option(True, "--transcribe", help="Run transcription worker"),
     process: bool = typer.Option(True, help="Run processing worker"),
+    openmhz: bool = typer.Option(False, "--openmhz", help="Use OpenMHz instead of Broadcastify"),
 ) -> None:
     """Start real-time stream capture and processing."""
     import multiprocessing
@@ -70,12 +71,20 @@ def stream_start(
     procs: list[multiprocessing.Process] = []
 
     if capture:
-        from blotter.stages.worker import run_capture
-        p = multiprocessing.Process(
-            target=run_capture,
-            args=(settings.stream, settings.gcs, settings.redis),
-            name="capture",
-        )
+        if openmhz:
+            from blotter.stages.worker import run_capture_openmhz
+            p = multiprocessing.Process(
+                target=run_capture_openmhz,
+                args=(settings.openmhz, settings.gcs, settings.redis),
+                name="capture",
+            )
+        else:
+            from blotter.stages.worker import run_capture
+            p = multiprocessing.Process(
+                target=run_capture,
+                args=(settings.stream, settings.gcs, settings.redis),
+                name="capture",
+            )
         procs.append(p)
 
     if transcribe_worker:

@@ -76,6 +76,15 @@ class RedisConfig(BaseSettings):
     password: str = ""
 
 
+class OpenMhzConfig(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="OPENMHZ_", env_file=".env", extra="ignore")
+
+    api_url: str = "https://api.openmhz.com"
+    systems: str = "lapdvalley,lapdwest"
+    poll_interval: int = 10
+    use_socketio: bool = True
+
+
 class StreamConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="STREAM_", env_file=".env", extra="ignore")
 
@@ -112,6 +121,7 @@ class Settings(BaseSettings):
     gcs: GCSConfig = Field(default_factory=GCSConfig)
     redis: RedisConfig = Field(default_factory=RedisConfig)
     stream: StreamConfig = Field(default_factory=StreamConfig)
+    openmhz: OpenMhzConfig = Field(default_factory=OpenMhzConfig)
 
 
 def get_settings() -> Settings:

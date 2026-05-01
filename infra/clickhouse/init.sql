@@ -26,8 +26,8 @@ CREATE TABLE IF NOT EXISTS blotter.scanner_events (
     context       String DEFAULT '',
     tags          String DEFAULT '',
     created_at    DateTime64(3) DEFAULT now64(3)
-) ENGINE = MergeTree()
-ORDER BY (toDate(event_ts), h3_index, event_ts);
+) ENGINE = ReplacingMergeTree(created_at)
+ORDER BY (feed_id, archive_ts, normalized);
 
 CREATE TABLE IF NOT EXISTS blotter.pipeline_metrics (
     ts       DateTime64(3) DEFAULT now64(3),
