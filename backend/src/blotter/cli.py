@@ -61,6 +61,7 @@ app.add_typer(stream_app)
 def stream_start(
     capture: bool = typer.Option(True, help="Run capture workers"),
     transcribe_worker: bool = typer.Option(True, "--transcribe", help="Run transcription worker"),
+    transcriber_workers: int = typer.Option(1, "--transcriber-workers", help="Number of transcription workers"),
     process: bool = typer.Option(True, help="Run processing worker"),
     openmhz: bool = typer.Option(False, "--openmhz", help="Use OpenMHz instead of Broadcastify"),
 ) -> None:
@@ -89,12 +90,13 @@ def stream_start(
 
     if transcribe_worker:
         from blotter.stages.worker import run_transcriber
-        p = multiprocessing.Process(
-            target=run_transcriber,
-            args=(settings.transcription, settings.stream, settings.gcs, settings.redis, settings.clickhouse),
-            name="transcriber",
-        )
-        procs.append(p)
+        for i in range(transcriber_workers):
+            p = multiprocessing.Process(
+                target=run_transcriber,
+                args=(settings.transcription, settings.stream, settings.gcs, settings.redis, settings.clickhouse),
+                name=f"transcriber-{i}",
+            )
+            procs.append(p)
 
     if process:
         from blotter.stages.worker import run_processor

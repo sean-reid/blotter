@@ -46,7 +46,7 @@ class GoogleNLPConfig(BaseSettings):
 class TranscriptionConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="TRANSCRIPTION_", env_file=".env", extra="ignore")
 
-    model_size: str = "large-v3"
+    model_size: str = "large-v3-turbo"
     device: str = "cuda"
     compute_type: str = "float16"
     beam_size: int = 10
