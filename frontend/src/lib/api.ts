@@ -40,7 +40,7 @@ export async function fetchEvents(
   let sql =
     `SELECT e.feed_id, e.archive_ts, e.event_ts, e.raw_location, e.normalized, ` +
     `e.latitude, e.longitude, e.confidence, e.context, e.tags ` +
-    `FROM blotter_staging.scanner_events e ` +
+    `FROM blotter_staging.scanner_events FINAL e ` +
     `WHERE e.event_ts BETWEEN fromUnixTimestamp({startTs:UInt64}) AND fromUnixTimestamp({endTs:UInt64})`;
 
   if (bounds) {
@@ -89,7 +89,7 @@ export async function fetchEventForTranscript(
   const sql =
     `SELECT feed_id, archive_ts, event_ts, raw_location, normalized, ` +
     `latitude, longitude, confidence, context, tags ` +
-    `FROM blotter_staging.scanner_events ` +
+    `FROM blotter_staging.scanner_events FINAL ` +
     `WHERE feed_id = {feedId:String} ` +
     `AND abs(toInt64(toDateTime64(archive_ts, 3)) - toInt64(toDateTime64({archiveTs:String}, 3))) < 120 ` +
     `ORDER BY abs(toInt64(toDateTime64(archive_ts, 3)) - toInt64(toDateTime64({archiveTs:String}, 3))) ASC ` +
