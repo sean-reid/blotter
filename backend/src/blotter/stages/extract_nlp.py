@@ -52,7 +52,7 @@ SUSPECT_DESC_RE = re.compile(
 )
 
 # Standalone words that NLP extracts as entities but are never dispatch locations.
-SKIP_NAMES = {
+_SKIP_COMMON = {
     # dispatch roles / people
     "suspect", "victim", "male", "female", "supervisor", "officer",
     "informant", "complainant", "witness", "caller", "reporting party",
@@ -76,58 +76,6 @@ SKIP_NAMES = {
     "division", "bureau", "station", "frequency",
     "precinct", "district", "sector", "zone", "battalion",
 
-    # LAPD divisions
-    "central", "pacific", "rampart", "hollenbeck", "harbor",
-    "hollywood", "wilshire", "devonshire", "foothill", "topanga",
-    "newton", "olympic", "mission", "van nuys",
-    "west valley", "north hollywood", "west la",
-    "south valley", "north valley", "east valley",
-    "77th street", "south bureau", "west bureau", "valley bureau",
-    "central bureau",
-
-    # LAPD station names
-    "hollywood station", "wilshire station", "pacific station",
-    "rampart station", "hollenbeck station", "harbor station",
-    "newton station", "olympic station", "devonshire station",
-    "foothill station", "topanga station", "mission station",
-    "van nuys station", "west valley station", "north hollywood station",
-    "west la station", "77th street station", "southeast station",
-    "southwest station", "central station",
-
-    # Chicago PD districts / areas
-    "area north", "area central", "area south",
-    "district 1", "district 2", "district 3", "district 4", "district 5",
-    "district 6", "district 7", "district 8", "district 9", "district 10",
-    "district 11", "district 12", "district 14", "district 15",
-    "district 16", "district 17", "district 18", "district 19",
-    "district 20", "district 22", "district 24", "district 25",
-
-    # Charlotte CMPD divisions
-    "metro division", "freedom division", "north tryon division",
-    "providence division", "south division", "steele creek division",
-    "university city division", "westover division",
-
-    # Philadelphia PPD districts
-    "east division", "northwest division", "south division",
-    "southwest division", "northeast division",
-
-    # Seattle precincts
-    "north precinct", "south precinct", "east precinct",
-    "west precinct", "southwest precinct",
-
-    # San Francisco SFPD districts
-    "bayview station", "central station", "ingleside station",
-    "mission station", "northern station", "park station",
-    "richmond station", "southern station", "taraval station",
-    "tenderloin station",
-
-    # Portland PPB precincts
-    "central precinct", "east precinct", "north precinct",
-
-    # Dallas DPD divisions
-    "northeast division", "northwest division", "south central division",
-    "southeast division", "southwest division",
-
     # Phonetic alphabet (standalone)
     "charles", "adam", "lincoln", "mary", "boy", "king", "tom",
     "david", "edward", "frank", "george", "henry", "ocean", "paul",
@@ -145,6 +93,147 @@ SKIP_NAMES = {
     "cash back", "insurance", "commercial",
     "wood", "james", "beach", "garden", "park", "hill",
 }
+
+_SKIP_BY_SYSTEM: dict[str, set[str]] = {
+    "lapdvalley": {
+        "central", "pacific", "rampart", "hollenbeck", "harbor",
+        "hollywood", "wilshire", "devonshire", "foothill", "topanga",
+        "newton", "olympic", "mission", "van nuys",
+        "west valley", "north hollywood", "west la",
+        "south valley", "north valley", "east valley",
+        "77th street", "south bureau", "west bureau", "valley bureau",
+        "central bureau",
+        "hollywood station", "wilshire station", "pacific station",
+        "rampart station", "hollenbeck station", "harbor station",
+        "newton station", "olympic station", "devonshire station",
+        "foothill station", "topanga station", "mission station",
+        "van nuys station", "west valley station", "north hollywood station",
+        "west la station", "77th street station", "southeast station",
+        "southwest station", "central station",
+    },
+    "lapdwest": {
+        "central", "pacific", "rampart", "hollenbeck", "harbor",
+        "hollywood", "wilshire", "devonshire", "foothill", "topanga",
+        "newton", "olympic", "mission", "van nuys",
+        "west valley", "north hollywood", "west la",
+        "south valley", "north valley", "east valley",
+        "77th street", "south bureau", "west bureau", "valley bureau",
+        "central bureau",
+        "hollywood station", "wilshire station", "pacific station",
+        "rampart station", "hollenbeck station", "harbor station",
+        "newton station", "olympic station", "devonshire station",
+        "foothill station", "topanga station", "mission station",
+        "van nuys station", "west valley station", "north hollywood station",
+        "west la station", "77th street station", "southeast station",
+        "southwest station", "central station",
+    },
+    "chi_cpd": {
+        "area north", "area central", "area south",
+        "district 1", "district 2", "district 3", "district 4", "district 5",
+        "district 6", "district 7", "district 8", "district 9", "district 10",
+        "district 11", "district 12", "district 14", "district 15",
+        "district 16", "district 17", "district 18", "district 19",
+        "district 20", "district 22", "district 24", "district 25",
+    },
+    "cltp25": {
+        "metro division", "freedom division", "north tryon division",
+        "providence division", "south division", "steele creek division",
+        "university city division", "westover division",
+        "hickory grove division", "independence division",
+    },
+    "philly": {
+        "east division", "northwest division", "south division",
+        "southwest division", "northeast division", "central division",
+    },
+    "psern1": {
+        "north precinct", "south precinct", "east precinct",
+        "west precinct", "southwest precinct",
+    },
+    "sfp25": {
+        "bayview station", "central station", "ingleside station",
+        "mission station", "northern station", "park station",
+        "richmond station", "southern station", "taraval station",
+        "tenderloin station",
+    },
+    "pdx2": {
+        "central precinct", "east precinct", "north precinct",
+    },
+    "ntirnd1": {
+        "northeast division", "northwest division", "south central division",
+        "southeast division", "southwest division", "central division",
+        "north central division",
+    },
+    "pgcomd": {
+        "district 1", "district 2", "district 3", "district 4",
+        "district 5", "district 6", "district 7",
+    },
+    "nwhc": {
+        "precinct 4", "precinct 5",
+    },
+    "dane_com": {
+        "south district", "north district", "east district",
+        "west district", "midtown district",
+    },
+    "monroecony": {
+        "lake section", "genesee section", "goodman section",
+        "clinton section",
+    },
+    "dcfd": {
+        "engine company", "truck company", "battalion chief",
+        "rescue squad", "medic unit",
+    },
+    "mnhennco": {
+        "1st precinct", "2nd precinct", "3rd precinct", "4th precinct",
+        "5th precinct",
+    },
+    "njicsunion": {
+        "elizabeth", "plainfield", "linden", "rahway", "westfield",
+        "union township", "cranford",
+    },
+    "gcrn": {
+        "district 1", "district 2", "district 3", "district 4", "district 5",
+        "basic patrol",
+    },
+    "mcbsimcast": {
+        "clinton township", "sterling heights", "warren",
+        "chesterfield township", "shelby township",
+    },
+    "sc21102": {
+        "east side", "west end",
+    },
+    "scpd": {
+        "1st precinct", "2nd precinct", "3rd precinct", "4th precinct",
+        "5th precinct", "6th precinct", "7th precinct",
+    },
+    "snacc": {
+        "area command", "southeast area command", "northeast area command",
+        "northwest area command", "south central area command",
+        "convention center area command", "downtown area command",
+        "bolden area command", "enterprise area command",
+    },
+    "apsp25": {
+        "zone 1", "zone 2", "zone 3", "zone 4", "zone 5", "zone 6",
+        "beat", "watch",
+    },
+    "bacop25": {
+        "essex precinct", "towson precinct", "franklin precinct",
+        "woodlawn precinct", "wilkens precinct", "cockeysville precinct",
+        "lutherville precinct",
+    },
+    "indydps": {
+        "east district", "west district", "north district", "south district",
+        "southeast district", "southwest district", "northwest district",
+        "northeast district", "downtown district",
+    },
+}
+
+
+def _get_skip_names(feed_id: str | None) -> set[str]:
+    if not feed_id:
+        return _SKIP_COMMON
+    system = feed_id.split("-")[0] if "-" in feed_id else feed_id
+    system_skips = _SKIP_BY_SYSTEM.get(system, set())
+    return _SKIP_COMMON | system_skips
 
 STREET_SUFFIX_RE = re.compile(
     r"\b(?:street|st|avenue|ave|boulevard|blvd|drive|dr|road|rd|way|"
@@ -228,7 +317,7 @@ def _ordinal_at(text: str, offset: int, num_len: int) -> str | None:
     return None
 
 
-def _find_intersections(text: str, entities: list[dict]) -> list[tuple[str, int]]:
+def _find_intersections(text: str, entities: list[dict], skip_names: set[str]) -> list[tuple[str, int]]:
     located = []
     for e in entities:
         etype = e.get("type")
@@ -239,7 +328,7 @@ def _find_intersections(text: str, entities: list[dict]) -> list[tuple[str, int]
         mention = e.get("mentions", [{}])[0].get("text", {}).get("content", name)
 
         if etype in INTERSECTION_ENTITY_TYPES:
-            if name.lower() in SKIP_NAMES or len(name) < 3 or not _is_plausible_location(name):
+            if name.lower() in skip_names or len(name) < 3 or not _is_plausible_location(name):
                 continue
             located.append((name, offset, len(mention)))
         elif etype == "NUMBER":
@@ -305,11 +394,12 @@ def _extract_addresses(text: str) -> list[ExtractedLocation]:
     return locations
 
 
-def extract_entities(text: str, config: GoogleNLPConfig) -> list[ExtractedLocation]:
+def extract_entities(text: str, config: GoogleNLPConfig, feed_id: str | None = None) -> list[ExtractedLocation]:
     cleaned = strip_ads(text)
     if not cleaned or not config.api_key:
         return []
 
+    skip_names = _get_skip_names(feed_id)
     addresses = _extract_addresses(cleaned)
 
     cleaned = UNIT_CALLSIGN_RE.sub("", cleaned)
@@ -322,7 +412,7 @@ def extract_entities(text: str, config: GoogleNLPConfig) -> list[ExtractedLocati
         log.warning("nlp entity extraction failed", exc_info=True)
         return addresses
 
-    intersections = _find_intersections(cleaned, entities)
+    intersections = _find_intersections(cleaned, entities, skip_names)
     intersection_names = {name for name, _ in intersections}
 
     seen: set[str] = {loc.normalized.lower() for loc in addresses}
@@ -346,7 +436,7 @@ def extract_entities(text: str, config: GoogleNLPConfig) -> list[ExtractedLocati
         if etype not in LOCATION_TYPES:
             continue
         name = entity.get("name", "").strip()
-        if name.lower() in SKIP_NAMES or len(name) < 3:
+        if name.lower() in skip_names or len(name) < 3:
             continue
         if not _is_plausible_location(name):
             continue

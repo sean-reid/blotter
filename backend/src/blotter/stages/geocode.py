@@ -175,6 +175,50 @@ SYSTEM_REGIONS: dict[str, SystemRegion] = {
         suffix="Rochester, NY",
         bias_south=43.05, bias_west=-77.75, bias_north=43.35, bias_east=-77.40,
     ),
+    "dcfd": SystemRegion(
+        suffix="Washington, DC",
+        bias_south=38.80, bias_west=-77.12, bias_north=38.99, bias_east=-76.91,
+    ),
+    "mnhennco": SystemRegion(
+        suffix="Minneapolis, MN",
+        bias_south=44.85, bias_west=-93.50, bias_north=45.10, bias_east=-93.17,
+    ),
+    "njicsunion": SystemRegion(
+        suffix="Union County, NJ",
+        bias_south=40.55, bias_west=-74.45, bias_north=40.72, bias_east=-74.18,
+    ),
+    "gcrn": SystemRegion(
+        suffix="Cleveland, OH",
+        bias_south=41.37, bias_west=-81.88, bias_north=41.60, bias_east=-81.53,
+    ),
+    "mcbsimcast": SystemRegion(
+        suffix="Macomb County, MI",
+        bias_south=42.42, bias_west=-83.15, bias_north=42.72, bias_east=-82.80,
+    ),
+    "sc21102": SystemRegion(
+        suffix="St. Clair County, IL",
+        bias_south=38.40, bias_west=-90.20, bias_north=38.75, bias_east=-89.70,
+    ),
+    "scpd": SystemRegion(
+        suffix="Suffolk County, NY",
+        bias_south=40.60, bias_west=-73.40, bias_north=41.10, bias_east=-72.00,
+    ),
+    "snacc": SystemRegion(
+        suffix="Las Vegas, NV",
+        bias_south=35.90, bias_west=-115.40, bias_north=36.35, bias_east=-114.90,
+    ),
+    "apsp25": SystemRegion(
+        suffix="Atlanta, GA",
+        bias_south=33.65, bias_west=-84.55, bias_north=33.89, bias_east=-84.28,
+    ),
+    "bacop25": SystemRegion(
+        suffix="Baltimore County, MD",
+        bias_south=39.15, bias_west=-76.85, bias_north=39.50, bias_east=-76.45,
+    ),
+    "indydps": SystemRegion(
+        suffix="Indianapolis, IN",
+        bias_south=39.63, bias_west=-86.33, bias_north=39.93, bias_east=-85.95,
+    ),
 }
 
 

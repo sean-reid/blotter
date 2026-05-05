@@ -30,7 +30,7 @@ def extract(feed_id: str) -> None:
 
     for row in rows.result_rows:
         fid, archive_ts, transcript = row
-        nlp_entities = extract_entities(transcript, settings.google_nlp)
+        nlp_entities = extract_entities(transcript, settings.google_nlp, feed_id=fid)
         clauses = nlp_entities if nlp_entities else extract_clauses(transcript)
         events: list[GeocodedEvent] = []
         for clause in clauses:
