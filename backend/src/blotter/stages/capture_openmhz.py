@@ -44,6 +44,17 @@ def _system_display_name(system: str) -> str:
         "nwhc": "NW Harris County",
         "dane_com": "Dane County",
         "monroecony": "Monroe County",
+        "dcfd": "DC Fire & EMS",
+        "mnhennco": "Hennepin County",
+        "njicsunion": "NJICS Union County",
+        "gcrn": "Cleveland Police",
+        "mcbsimcast": "Macomb County",
+        "sc21102": "St. Clair County",
+        "scpd": "Suffolk County PD",
+        "snacc": "Las Vegas Metro",
+        "apsp25": "Atlanta Police",
+        "bacop25": "Baltimore County",
+        "indydps": "Indianapolis DPS",
     }
     return names.get(system, system)
 
