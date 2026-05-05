@@ -51,19 +51,27 @@ echo "[OK] supervisord"
 mkdir -p /workspace/clickhouse-data /workspace/clickhouse-logs
 [ -L /var/lib/clickhouse ] || (rm -rf /var/lib/clickhouse && ln -sf /workspace/clickhouse-data /var/lib/clickhouse)
 [ -L /var/log/clickhouse-server ] || (rm -rf /var/log/clickhouse-server && ln -sf /workspace/clickhouse-logs /var/log/clickhouse-server)
+mkdir -p /var/run/clickhouse-server
+chown -R root:root /workspace/clickhouse-data /workspace/clickhouse-logs /var/run/clickhouse-server
+
+# ClickHouse user config (full-text index)
+mkdir -p /etc/clickhouse-server/users.d
+cp "$REPO_DIR/infra/clickhouse/users.xml" /etc/clickhouse-server/users.d/blotter.xml
 
 # Clone/update repo
 if [ -d "$REPO_DIR" ]; then
-  cd "$REPO_DIR" && git pull 2>/dev/null
+  cd "$REPO_DIR" && git fetch origin && git checkout production && git reset --hard origin/production
 else
-  git clone https://github.com/sean-reid/blotter.git "$REPO_DIR"
+  git clone -b production https://github.com/sean-reid/blotter.git "$REPO_DIR"
 fi
 echo "[OK] Repo"
 
 # Install/sync Python backend
 cd "$REPO_DIR/backend"
 uv sync 2>/dev/null
-echo "[OK] Python packages"
+uv pip install playwright 2>/dev/null
+uv run playwright install chromium --with-deps 2>/dev/null
+echo "[OK] Python packages + Playwright"
 
 # Kill any leftover processes from previous runs
 supervisorctl -c "$REPO_DIR/infra/supervisord/supervisord.conf" shutdown 2>/dev/null || true

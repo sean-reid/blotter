@@ -90,13 +90,12 @@ def stream_start(
 
     if transcribe_worker:
         from blotter.stages.worker import run_transcriber
-        for i in range(transcriber_workers):
-            p = multiprocessing.Process(
-                target=run_transcriber,
-                args=(settings.transcription, settings.stream, settings.gcs, settings.redis, settings.clickhouse),
-                name=f"transcriber-{i}",
-            )
-            procs.append(p)
+        p = multiprocessing.Process(
+            target=run_transcriber,
+            args=(settings.transcription, settings.stream, settings.gcs, settings.redis, settings.clickhouse, transcriber_workers),
+            name="transcriber",
+        )
+        procs.append(p)
 
     if process:
         from blotter.stages.worker import run_processor

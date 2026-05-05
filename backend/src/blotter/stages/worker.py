@@ -62,8 +62,13 @@ def run_transcriber(
     gcs_config: GCSConfig,
     redis_config: RedisConfig,
     ch_config: ClickHouseConfig,
+    num_threads: int = 1,
 ) -> None:
+    from threading import Thread
+
     transcriber = StreamTranscriber(transcription_config, stream_config, gcs_config)
+    # Eagerly load the model so all threads share one copy
+    _ = transcriber._transcriber.model
     storage = get_storage(gcs_config)
     r = get_redis(redis_config)
     ch = _connect_clickhouse(ch_config)
@@ -72,62 +77,74 @@ def run_transcriber(
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
 
-    log.info("transcription worker started")
+    def _worker_loop(thread_id: int) -> None:
+        log.info("transcription thread started", thread_id=thread_id)
 
-    while not stop.is_set():
-        task = dequeue_chunk(r, timeout=5)
-        if task is None:
-            continue
-
-        try:
-            if transcript_exists(ch, task.feed_id, str(task.chunk_ts)):
-                log.debug("skipping duplicate transcript", feed_id=task.feed_id, archive_ts=str(task.chunk_ts))
+        while not stop.is_set():
+            task = dequeue_chunk(r, timeout=5)
+            if task is None:
                 continue
 
-            segments, full_text, actual_duration_ms = transcriber.process_chunk(task)
+            try:
+                if transcript_exists(ch, task.feed_id, str(task.chunk_ts)):
+                    log.debug("skipping duplicate transcript", feed_id=task.feed_id, archive_ts=str(task.chunk_ts))
+                    continue
 
-            if not full_text:
-                try:
-                    storage.delete(task.chunk_path)
-                except Exception:
-                    log.debug("failed to delete empty chunk", chunk_path=task.chunk_path, exc_info=True)
-                continue
+                segments, full_text, actual_duration_ms = transcriber.process_chunk(task)
 
-            tags = extract_codes(full_text)
-            duration_ms = actual_duration_ms or task.duration_ms
+                if not full_text:
+                    try:
+                        storage.delete(task.chunk_path)
+                    except Exception:
+                        log.debug("failed to delete empty chunk", chunk_path=task.chunk_path, exc_info=True)
+                    continue
 
-            transcript = Transcript(
-                feed_id=task.feed_id,
-                feed_name=task.feed_name,
-                archive_ts=task.chunk_ts,
-                duration_ms=duration_ms,
-                audio_url=task.audio_url,
-                segments=segments,
-                full_text=full_text,
-                tags=tags,
-            )
-            insert_transcript(ch, transcript)
+                tags = extract_codes(full_text)
+                duration_ms = actual_duration_ms or task.duration_ms
 
-            tt = TranscriptTask(
-                feed_id=task.feed_id,
-                feed_name=task.feed_name,
-                chunk_ts=task.chunk_ts,
-                duration_ms=duration_ms,
-                audio_url=task.audio_url,
-                segments=segments,
-                full_text=full_text,
-                tags=tags,
-            )
-            enqueue_transcript(r, tt)
+                transcript = Transcript(
+                    feed_id=task.feed_id,
+                    feed_name=task.feed_name,
+                    archive_ts=task.chunk_ts,
+                    duration_ms=duration_ms,
+                    audio_url=task.audio_url,
+                    segments=segments,
+                    full_text=full_text,
+                    tags=tags,
+                )
+                insert_transcript(ch, transcript)
 
-            depth = queue_depth(r, CAPTURE_QUEUE)
-            if depth > 50:
-                log.warning("transcription backlog", depth=depth)
+                tt = TranscriptTask(
+                    feed_id=task.feed_id,
+                    feed_name=task.feed_name,
+                    chunk_ts=task.chunk_ts,
+                    duration_ms=duration_ms,
+                    audio_url=task.audio_url,
+                    segments=segments,
+                    full_text=full_text,
+                    tags=tags,
+                )
+                enqueue_transcript(r, tt)
 
-        except Exception:
-            log.error("transcription failed", feed_id=task.feed_id, exc_info=True)
+                depth = queue_depth(r, CAPTURE_QUEUE)
+                if depth > 50:
+                    log.warning("transcription backlog", depth=depth)
 
-    log.info("transcription worker stopped")
+            except Exception:
+                log.error("transcription failed", feed_id=task.feed_id, exc_info=True)
+
+        log.info("transcription thread stopped", thread_id=thread_id)
+
+    log.info("transcription worker started", num_threads=num_threads)
+
+    threads = []
+    for i in range(num_threads):
+        t = Thread(target=_worker_loop, args=(i,), name=f"transcriber-{i}", daemon=True)
+        t.start()
+        threads.append(t)
+
+    for t in threads:
+        t.join()
 
 
 def run_processor(
