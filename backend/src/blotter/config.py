@@ -121,7 +121,7 @@ class OllamaConfig(BaseSettings):
     host: str = "http://127.0.0.1:11434"
     model: str = "qwen2.5:7b-instruct-q4_K_M"
     enabled: bool = False
-    timeout: int = 15
+    timeout: int = 45
 
 
 class Settings(BaseSettings):
