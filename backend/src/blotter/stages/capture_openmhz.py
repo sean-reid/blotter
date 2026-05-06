@@ -286,6 +286,7 @@ class OpenMhzCaptureManager:
                                 backoff = min(30 * (2 ** min(consecutive_challenges - 1, 4)), 300)
                                 log.warning("cloudflare challenge detected", attempt=consecutive_challenges, backoff=backoff)
                                 self._solve_challenge(page)
+                                self._last_poll = time.monotonic()
                                 self._stop.wait(backoff)
                                 challenge_hit = True
                                 break
