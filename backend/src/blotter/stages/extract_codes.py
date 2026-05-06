@@ -796,6 +796,15 @@ for _d in [_TEN, _CA, _TX, _IL, _NY, _GA, _OH, _NV, _PA, _MD, _NJ,
     _ALL_CODES.update(_d)
 
 
+_BARE_NUM = re.compile(r"^\d+$")
+_ADDR_AFTER = re.compile(
+    r"\s+(?:\S+\s+)?"
+    r"(?:street|st|ave(?:nue)?|blvd|boulevard|block|way|drive|dr|"
+    r"rd|road|lane|ln|ct|court|pl(?:ace)?|hwy|highway|freeway)\b",
+    re.IGNORECASE,
+)
+
+
 def _make_pattern(codes: dict[str, str]) -> re.Pattern[str]:
     """Compile a single regex matching any key, longest first."""
     if not codes:
@@ -803,6 +812,14 @@ def _make_pattern(codes: dict[str, str]) -> re.Pattern[str]:
     keys = sorted(codes, key=len, reverse=True)
     alt = "|".join(re.escape(k) for k in keys)
     return re.compile(rf"\b(?:{alt})\b", re.IGNORECASE)
+
+
+def _is_address(text: str, m: re.Match[str]) -> bool:
+    """True if a purely numeric match looks like a street address number."""
+    if not _BARE_NUM.match(m.group()):
+        return False
+    after = text[m.end():m.end() + 40]
+    return bool(_ADDR_AFTER.match(after))
 
 
 @lru_cache(maxsize=None)
@@ -828,6 +845,8 @@ def extract_codes(text: str, feed_id: str = "") -> list[str]:
     pattern, lookup = _for_feed(system)
     found: dict[str, None] = {}
     for m in pattern.finditer(text):
+        if _is_address(text, m):
+            continue
         key = m.group().lower()
         if key in lookup:
             found[key] = None
