@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ScannerEvent, TranscriptResult, TranscriptSegment } from "../lib/types";
 import {
   fetchIncidentTranscripts,
-  fetchRelatedEvents,
   fetchStreetFilteredTranscripts,
   fetchSurroundingTranscripts,
 } from "../lib/api";
@@ -289,9 +288,7 @@ export default function EventPanel({ event, onClose }: Props) {
         })
         .catch(() => { setTranscripts([]); setFlatSegments([]); })
         .finally(() => setLoadingTranscript(false));
-      fetchRelatedEvents(event.feed_id, event.event_ts, event.latitude, event.longitude)
-        .then(setRelatedEvents)
-        .catch(() => setRelatedEvents([]));
+      setRelatedEvents([]);
     } else {
       setVisible(false);
       setTranscripts([]);
