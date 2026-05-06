@@ -85,9 +85,9 @@ export default function TranscriptList({
                       {formatDate(e.event_ts)}
                     </span>
                   </div>
-                  {e.context && (
+                  {(e.summary || e.context) && (
                     <div className="text-[12px] leading-relaxed text-[#545d68] line-clamp-2">
-                      {snippet(e.context, query)}
+                      {e.summary || snippet(e.context, query)}
                     </div>
                   )}
                   {e.tags && <div className="mt-1"><Tags tags={e.tags} /></div>}

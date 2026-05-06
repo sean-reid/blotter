@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS blotter.scanner_transcripts (
     transcript    String,
     segments      String DEFAULT '',
     tags          String DEFAULT '',
+    window_id     String DEFAULT '',
+    embedding     Array(Float32) DEFAULT [],
     created_at    DateTime64(3) DEFAULT now64(3)
 ) ENGINE = MergeTree()
 ORDER BY (feed_id, archive_ts)
@@ -26,6 +28,8 @@ CREATE TABLE IF NOT EXISTS blotter.scanner_events (
     confidence    Float32,
     context       String DEFAULT '',
     tags          String DEFAULT '',
+    window_id     String DEFAULT '',
+    summary       String DEFAULT '',
     created_at    DateTime64(3) DEFAULT now64(3)
 ) ENGINE = ReplacingMergeTree(created_at)
 ORDER BY (feed_id, archive_ts, normalized)

@@ -9,6 +9,8 @@ export interface ScannerEvent {
   confidence: number;
   context: string;
   tags: string;
+  window_id: string;
+  summary: string;
 }
 
 export interface TranscriptSegment {
@@ -27,6 +29,13 @@ export interface TranscriptResult {
   segments: string;
   tags: string;
   context: string;
+}
+
+export interface RelatedFeedEvent {
+  feed_id: string;
+  event_ts: string;
+  normalized: string;
+  window_id: string;
 }
 
 export interface TimeRange {
