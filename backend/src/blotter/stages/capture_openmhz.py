@@ -236,7 +236,7 @@ class OpenMhzCaptureManager:
 
             last_times: dict[str, int] = {s: int(time.time() * 1000) for s in systems}
             chunk_index = 0
-            executor = ThreadPoolExecutor(max_workers=8)
+            executor = ThreadPoolExecutor(max_workers=32)
             self._last_poll = time.monotonic()
 
             def _watchdog() -> None:
