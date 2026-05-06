@@ -84,13 +84,16 @@ def run_transcriber(
     WINDOW_GAP_SECONDS = 60
     _last_seen: dict[str, tuple[float, str]] = {}
 
-    def _worker_loop(thread_id: int) -> None:
+    def _worker_loop(thread_id: int, extra: bool = False) -> None:
         ch = _connect_clickhouse(ch_config)
-        log.info("transcription thread started", thread_id=thread_id)
+        log.info("transcription thread started", thread_id=thread_id, extra=extra)
 
         while not stop.is_set():
             task = dequeue_chunk(r, timeout=5)
             if task is None:
+                if extra and queue_depth(r, CAPTURE_QUEUE) < SCALE_DOWN_THRESHOLD:
+                    log.info("extra thread exiting, backlog clear", thread_id=thread_id)
+                    return
                 continue
 
             try:
@@ -161,16 +164,43 @@ def run_transcriber(
 
         log.info("transcription thread stopped", thread_id=thread_id)
 
-    log.info("transcription worker started", num_threads=num_threads)
+    MIN_THREADS = num_threads
+    MAX_THREADS = num_threads + 4
+    SCALE_UP_THRESHOLD = 50
+    SCALE_DOWN_THRESHOLD = 20
+    CHECK_INTERVAL = 10
 
-    threads = []
-    for i in range(num_threads):
-        t = Thread(target=_worker_loop, args=(i,), name=f"transcriber-{i}", daemon=True)
-        t.start()
-        threads.append(t)
+    log.info("transcription worker started", min_threads=MIN_THREADS, max_threads=MAX_THREADS)
+
+    threads: list[Thread] = []
+    thread_count = 0
+
+    def _spawn(n: int, extra: bool = False) -> None:
+        nonlocal thread_count
+        for _ in range(n):
+            tid = thread_count
+            t = Thread(target=_worker_loop, args=(tid, extra), name=f"transcriber-{tid}", daemon=True)
+            t.start()
+            threads.append(t)
+            thread_count += 1
+
+    _spawn(MIN_THREADS)
+
+    while not stop.is_set():
+        stop.wait(CHECK_INTERVAL)
+        if stop.is_set():
+            break
+        alive = sum(1 for t in threads if t.is_alive())
+        depth = queue_depth(r, CAPTURE_QUEUE)
+        if depth > SCALE_UP_THRESHOLD and alive < MAX_THREADS:
+            add = min(2, MAX_THREADS - alive)
+            _spawn(add, extra=True)
+            log.info("scaled up transcribers", alive=alive + add, depth=depth)
+        elif depth < SCALE_DOWN_THRESHOLD and alive > MIN_THREADS:
+            log.info("backlog clear, extra threads will drain naturally", alive=alive, depth=depth)
 
     for t in threads:
-        t.join()
+        t.join(timeout=10)
 
 
 def run_processor(
