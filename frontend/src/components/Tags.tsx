@@ -1,65 +1,3 @@
-const CODE_LABELS: Record<string, string> = {
-  "code 1": "No lights/sirens",
-  "code 2": "Urgent, no sirens",
-  "code 3": "Lights & sirens",
-  "code 4": "No further assist",
-  "code 5": "Stakeout",
-  "code 6": "Out for investigation",
-  "code 7": "Meal break",
-  "code 37": "Stolen vehicle",
-  "10-1": "Poor reception",
-  "10-2": "Good reception",
-  "10-3": "Stop transmitting",
-  "10-4": "Acknowledged",
-  "10-5": "Relay",
-  "10-6": "Busy",
-  "10-7": "Out of service",
-  "10-8": "In service",
-  "10-9": "Repeat",
-  "10-10": "Off duty",
-  "10-14": "Escort",
-  "10-15": "Prisoner in custody",
-  "10-19": "Return to station",
-  "10-20": "Location",
-  "10-22": "Disregard",
-  "10-23": "Stand by",
-  "10-29": "Check wants",
-  "10-33": "Emergency traffic",
-  "10-35": "Confidential info",
-  "10-36": "Correct time",
-  "10-54": "Possible dead body",
-  "10-71": "Shooting",
-  "10-77": "ETA",
-  "10-97": "Arrived at scene",
-  "10-98": "Available",
-  "10-99": "Wanted person",
-  "187": "Homicide",
-  "207": "Kidnapping",
-  "211": "Robbery",
-  "242": "Battery",
-  "245": "ADW",
-  "261": "Rape",
-  "288": "Lewd conduct",
-  "311": "Indecent exposure",
-  "390": "Drunk",
-  "415": "Disturb. peace",
-  "459": "Burglary",
-  "484": "Theft",
-  "487": "Grand theft",
-  "502": "DUI",
-  "586": "Illegal parking",
-  "594": "Malicious mischief",
-  "647": "Disorderly",
-  "10851": "Stolen vehicle",
-  "11-44": "Deceased",
-  "11-80": "Major accident",
-  "11-81": "Minor accident",
-  "11-82": "Property damage",
-  "11-83": "Accident",
-  "11-85": "Tow needed",
-  "11-99": "Officer needs help",
-};
-
 interface Props {
   tags: string;
 }
@@ -74,17 +12,15 @@ export default function Tags({ tags }: Props) {
       {list.map((raw) => {
         const colonIdx = raw.indexOf(":");
         const code = colonIdx > -1 ? raw.slice(0, colonIdx) : raw;
-        const storedLabel = colonIdx > -1 ? raw.slice(colonIdx + 1) : "";
-        const label = storedLabel || CODE_LABELS[code.toLowerCase()] || "";
+        const label = colonIdx > -1 ? raw.slice(colonIdx + 1) : "";
         return (
           <span
             key={raw}
             className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#2d333b] text-[#adbac7]"
-            title={label || undefined}
           >
             {code}
             {label && (
-              <span className="ml-1 text-[#545d68]">{label}</span>
+              <span className="ml-1 text-[#768390]">({label})</span>
             )}
           </span>
         );
