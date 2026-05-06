@@ -81,7 +81,7 @@ class OpenMhzConfig(BaseSettings):
 
     api_url: str = "https://api.openmhz.com"
     systems: str = "lapdvalley,lapdwest"
-    poll_interval: int = 10
+    poll_interval: int = 3
 
 
 class StreamConfig(BaseSettings):
@@ -121,7 +121,7 @@ class OllamaConfig(BaseSettings):
     host: str = "http://127.0.0.1:11434"
     model: str = "qwen2.5:7b-instruct-q4_K_M"
     enabled: bool = False
-    timeout: int = 30
+    timeout: int = 15
 
 
 class Settings(BaseSettings):

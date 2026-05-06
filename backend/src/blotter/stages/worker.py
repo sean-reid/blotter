@@ -244,6 +244,9 @@ def run_processor(
                     surrounding = fetch_surrounding_context(ch, task.feed_id, str(task.chunk_ts))
                 context_text = surrounding if surrounding else task.full_text
 
+                if len(context_text) < 30:
+                    continue
+
                 entities = extract_entities(context_text, nlp_config, feed_id=task.feed_id)
                 if not entities:
                     entities = extract_clauses(context_text)
