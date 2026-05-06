@@ -234,8 +234,11 @@ def run_processor(
                 batch_coords.append((lat, lon))
                 ctx = surrounding[:500] if surrounding else e.context
                 summary = ""
-                if summarizer and len(context_text) > 100:
+                backlog = queue_depth(r, CAPTURE_QUEUE)
+                if summarizer and len(context_text) > 100 and backlog < 50:
                     summary = summarizer.summarize(context_text, location=name) or ""
+                elif summarizer and backlog >= 50:
+                    log.debug("skipping summary, backlog too high", depth=backlog)
                 events.append(GeocodedEvent(
                     feed_id=task.feed_id,
                     archive_ts=task.chunk_ts,
