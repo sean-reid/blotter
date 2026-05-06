@@ -257,8 +257,10 @@ class OpenMhzCaptureManager:
             wd.start()
 
             log.info("polling started", systems=systems)
+            consecutive_challenges = 0
 
             while not self._stop.is_set():
+                challenge_hit = False
                 for system in systems:
                     if self._stop.is_set():
                         break
@@ -280,9 +282,16 @@ class OpenMhzCaptureManager:
                             data = json.loads(result)
                         except json.JSONDecodeError:
                             if "challenge" in result.lower() or "<html" in result.lower():
-                                log.warning("cloudflare challenge detected, re-solving")
+                                consecutive_challenges += 1
+                                backoff = min(30 * (2 ** min(consecutive_challenges - 1, 4)), 300)
+                                log.warning("cloudflare challenge detected", attempt=consecutive_challenges, backoff=backoff)
                                 self._solve_challenge(page)
+                                self._stop.wait(backoff)
+                                challenge_hit = True
+                                break
                             continue
+
+                        consecutive_challenges = 0
 
                         if "error" in data:
                             log.warning("fetch error", system=system, error=data["error"])
@@ -324,7 +333,8 @@ class OpenMhzCaptureManager:
                     except Exception:
                         log.warning("poll cycle failed", system=system, exc_info=True)
 
-                self._stop.wait(self.config.poll_interval)
+                if not challenge_hit:
+                    self._stop.wait(self.config.poll_interval)
 
             executor.shutdown(wait=True, cancel_futures=True)
             browser.close()
