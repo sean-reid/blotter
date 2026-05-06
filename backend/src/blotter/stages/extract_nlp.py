@@ -76,11 +76,15 @@ _SKIP_COMMON = {
     "division", "bureau", "station", "frequency",
     "precinct", "district", "sector", "zone", "battalion",
 
-    # Phonetic alphabet (standalone)
-    "charles", "adam", "lincoln", "mary", "boy", "king", "tom",
-    "david", "edward", "frank", "george", "henry", "ocean", "paul",
-    "robert", "sam", "william", "victor", "nora", "ida", "john",
-    "queen", "union", "young", "zebra",
+    # Phonetic alphabet / unit callsigns (standalone)
+    "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf",
+    "hotel", "india", "juliet", "kilo", "lima", "mike", "november",
+    "oscar", "papa", "quebec", "romeo", "sierra", "tango", "uniform",
+    "whiskey", "x-ray", "yankee", "zulu",
+    "adam", "baker", "charles", "david", "edward", "frank", "george",
+    "henry", "ida", "john", "king", "lincoln", "mary", "nora", "ocean",
+    "paul", "queen", "robert", "sam", "tom", "union", "victor",
+    "william", "young", "zebra", "boy",
 
     # dispatch vocabulary
     "unit", "dispatch", "ambulance", "backup", "custody",
