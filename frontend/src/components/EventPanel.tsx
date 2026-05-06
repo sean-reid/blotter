@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ScannerEvent, TranscriptResult, TranscriptSegment } from "../lib/types";
-import { fetchSurroundingTranscripts } from "../lib/api";
+import {
+  fetchIncidentTranscripts,
+  fetchRelatedEvents,
+  fetchStreetFilteredTranscripts,
+  fetchSurroundingTranscripts,
+} from "../lib/api";
+import type { RelatedFeedEvent } from "../lib/types";
 import Tags from "./Tags";
 
 interface Props {
@@ -85,6 +91,8 @@ export default function EventPanel({ event, onClose }: Props) {
   const [transcripts, setTranscripts] = useState<TranscriptResult[]>([]);
   const [flatSegments, setFlatSegments] = useState<FlatSegment[]>([]);
   const [loadingTranscript, setLoadingTranscript] = useState(false);
+  const [relatedEvents, setRelatedEvents] = useState<RelatedFeedEvent[]>([]);
+  const [relatedExpanded, setRelatedExpanded] = useState(false);
   const [dragY, setDragY] = useState(0);
   const dragStartY = useRef(0);
   const dragging = useRef(false);
@@ -249,17 +257,41 @@ export default function EventPanel({ event, onClose }: Props) {
       setTranscripts([]);
       setFlatSegments([]);
       setDragY(0);
+      setRelatedEvents([]);
+      setRelatedExpanded(false);
       setActiveTranscriptIdx(-1);
       setPlaying(false);
       setAudioReady(false);
       stopSource();
-      fetchSurroundingTranscripts(event.feed_id, event.archive_ts, 2)
+      const streetName = event.normalized
+        .split(/\s+(?:&|and|at)\s+/i)[0]
+        ?.replace(/^\d+\s+/, "")
+        .trim() || "";
+      const load = (
+        event.window_id
+          ? fetchIncidentTranscripts(event.window_id)
+          : Promise.resolve([])
+      ).then((results) => {
+        if (results.length >= 3) return results;
+        if (streetName) {
+          return fetchStreetFilteredTranscripts(event.feed_id, event.archive_ts, streetName).then(
+            (filtered) => (filtered.length > results.length ? filtered : results),
+          );
+        }
+        return results;
+      }).then((results) =>
+        results.length > 0 ? results : fetchSurroundingTranscripts(event.feed_id, event.archive_ts, 2),
+      );
+      load
         .then((results) => {
           setTranscripts(results);
           setFlatSegments(buildFlatSegments(results));
         })
         .catch(() => { setTranscripts([]); setFlatSegments([]); })
         .finally(() => setLoadingTranscript(false));
+      fetchRelatedEvents(event.feed_id, event.event_ts, event.latitude, event.longitude)
+        .then(setRelatedEvents)
+        .catch(() => setRelatedEvents([]));
     } else {
       setVisible(false);
       setTranscripts([]);
@@ -377,6 +409,12 @@ export default function EventPanel({ event, onClose }: Props) {
             </div>
           </div>
 
+          {event.summary && (
+            <div className="bg-[#1c2128] border border-[#2d333b] rounded-lg px-3 py-2.5">
+              <div className="text-sm text-[#e6edf3] leading-relaxed">{event.summary}</div>
+            </div>
+          )}
+
           <div>
             <FieldLabel>Time</FieldLabel>
             <div className="text-sm text-[#adbac7] tabular-nums">
@@ -395,6 +433,36 @@ export default function EventPanel({ event, onClose }: Props) {
             <div>
               <FieldLabel>Codes</FieldLabel>
               <Tags tags={event.tags} />
+            </div>
+          )}
+
+          {relatedEvents.length > 0 && (
+            <div>
+              <button
+                onClick={() => setRelatedExpanded(!relatedExpanded)}
+                className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-semibold text-[#539bf5] hover:text-[#6cb6ff] transition-colors"
+              >
+                <svg
+                  className={`w-3 h-3 transition-transform ${relatedExpanded ? "rotate-90" : ""}`}
+                  fill="currentColor" viewBox="0 0 24 24"
+                >
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+                Multi-Agency ({relatedEvents.length} feeds)
+              </button>
+              {relatedExpanded && (
+                <div className="mt-2 space-y-1.5">
+                  {relatedEvents.map((re, i) => (
+                    <div key={i} className="flex items-baseline gap-2 text-xs text-[#adbac7]">
+                      <span className="text-[#545d68] tabular-nums shrink-0">
+                        {new Date(re.event_ts.includes("Z") ? re.event_ts : re.event_ts.replace(" ", "T") + "Z").toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                      <span className="font-medium text-[#e6edf3]">{re.feed_id}</span>
+                      <span className="truncate">{re.normalized}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

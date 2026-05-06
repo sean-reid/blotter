@@ -18,6 +18,8 @@ class Transcript(BaseModel):
     segments: list[TranscriptSegment]
     full_text: str
     tags: list[str] = []
+    window_id: str = ""
+    embedding: list[float] = []
 
 
 class ExtractedLocation(BaseModel):
@@ -39,6 +41,8 @@ class GeocodedEvent(BaseModel):
     confidence: float
     context: str = ""
     tags: list[str] = []
+    window_id: str = ""
+    summary: str = ""
 
 
 class ChunkTask(BaseModel):
@@ -61,3 +65,4 @@ class TranscriptTask(BaseModel):
     segments: list[TranscriptSegment]
     full_text: str
     tags: list[str] = []
+    window_id: str = ""

@@ -92,7 +92,7 @@ def stream_start(
         from blotter.stages.worker import run_transcriber
         p = multiprocessing.Process(
             target=run_transcriber,
-            args=(settings.transcription, settings.stream, settings.gcs, settings.redis, settings.clickhouse, transcriber_workers),
+            args=(settings.transcription, settings.stream, settings.gcs, settings.redis, settings.clickhouse, settings.embedding, transcriber_workers),
             name="transcriber",
         )
         procs.append(p)
@@ -101,7 +101,7 @@ def stream_start(
         from blotter.stages.worker import run_processor
         p = multiprocessing.Process(
             target=run_processor,
-            args=(settings.redis, settings.clickhouse, settings.google_nlp, settings.google_geocoding, settings.region),
+            args=(settings.redis, settings.clickhouse, settings.google_nlp, settings.google_geocoding, settings.region, settings.ollama),
             name="processor",
         )
         procs.append(p)

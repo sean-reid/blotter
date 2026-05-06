@@ -38,6 +38,8 @@ def insert_transcript(client: Client, t: Transcript) -> None:
             t.full_text,
             segments_json,
             tags_str,
+            t.window_id,
+            t.embedding,
         ]],
         column_names=[
             "feed_id",
@@ -48,6 +50,8 @@ def insert_transcript(client: Client, t: Transcript) -> None:
             "transcript",
             "segments",
             "tags",
+            "window_id",
+            "embedding",
         ],
     )
     log.info("inserted transcript", feed_id=t.feed_id, archive_ts=str(t.archive_ts), tags=tags_str)
@@ -68,6 +72,8 @@ def insert_events(client: Client, events: list[GeocodedEvent]) -> None:
             e.confidence,
             e.context,
             ",".join(f"{t}:{code_label(t)}" if code_label(t) else t for t in e.tags),
+            e.window_id,
+            e.summary,
         ]
         for e in events
     ]
@@ -85,6 +91,8 @@ def insert_events(client: Client, events: list[GeocodedEvent]) -> None:
             "confidence",
             "context",
             "tags",
+            "window_id",
+            "summary",
         ],
     )
     log.info("inserted events", count=len(events), feed_id=events[0].feed_id)
@@ -139,6 +147,26 @@ def fetch_surrounding_context(
             "feed_id": feed_id,
             "ts": ts_clean,
             "window": window_minutes,
+            "limit": max_rows,
+        },
+    )
+    texts = [row[0] for row in result.result_rows if row[0].strip()]
+    return " /// ".join(texts)
+
+
+def fetch_window_transcripts(
+    client: Client,
+    window_id: str,
+    max_rows: int = 30,
+) -> str:
+    result = client.query(
+        "SELECT transcript FROM scanner_transcripts "
+        "WHERE window_id = {window_id:String} "
+        "AND length(transcript) > 0 "
+        "ORDER BY archive_ts ASC "
+        "LIMIT {limit:UInt32}",
+        parameters={
+            "window_id": window_id,
             "limit": max_rows,
         },
     )

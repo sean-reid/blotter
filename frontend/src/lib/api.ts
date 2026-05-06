@@ -1,4 +1,4 @@
-import type { ScannerEvent, TranscriptResult } from "./types";
+import type { RelatedFeedEvent, ScannerEvent, TranscriptResult } from "./types";
 
 const QUERY_URL = "/api/query";
 
@@ -39,7 +39,7 @@ export async function fetchEvents(
 
   let sql =
     `SELECT feed_id, archive_ts, event_ts, raw_location, normalized, ` +
-    `latitude, longitude, confidence, context, tags ` +
+    `latitude, longitude, confidence, context, tags, window_id, summary ` +
     `FROM blotter.scanner_events FINAL ` +
     `WHERE event_ts BETWEEN fromUnixTimestamp({startTs:UInt64}) AND fromUnixTimestamp({endTs:UInt64})`;
 
@@ -60,7 +60,8 @@ export async function fetchEvents(
       ` OR normalized ILIKE {search:String}` +
       ` OR raw_location ILIKE {search:String}` +
       ` OR tags ILIKE {search:String}` +
-      ` OR feed_id ILIKE {search:String})`;
+      ` OR feed_id ILIKE {search:String}` +
+      ` OR summary ILIKE {search:String})`;
   }
 
   sql += ` ORDER BY event_ts DESC LIMIT 1 BY feed_id, archive_ts LIMIT 5000`;
@@ -100,13 +101,50 @@ export async function fetchSurroundingTranscripts(
   return query<TranscriptResult>(sql, { feedId, archiveTs, window: String(windowMinutes) });
 }
 
+export async function fetchStreetFilteredTranscripts(
+  feedId: string,
+  archiveTs: string,
+  streetName: string,
+  windowMinutes: number = 10,
+): Promise<TranscriptResult[]> {
+  const sql =
+    `SELECT feed_id, feed_name, archive_ts, duration_ms, audio_url, transcript, segments, tags, '' AS context ` +
+    `FROM blotter.scanner_transcripts ` +
+    `WHERE feed_id = {feedId:String} ` +
+    `AND length(transcript) > 0 ` +
+    `AND archive_ts BETWEEN toDateTime64({archiveTs:String}, 3) - INTERVAL {window:UInt32} MINUTE ` +
+    `AND toDateTime64({archiveTs:String}, 3) + INTERVAL {window:UInt32} MINUTE ` +
+    `AND positionCaseInsensitive(transcript, {street:String}) > 0 ` +
+    `ORDER BY archive_ts ASC ` +
+    `LIMIT 20`;
+  return query<TranscriptResult>(sql, {
+    feedId,
+    archiveTs,
+    window: String(windowMinutes),
+    street: streetName,
+  });
+}
+
+export async function fetchIncidentTranscripts(
+  windowId: string,
+): Promise<TranscriptResult[]> {
+  const sql =
+    `SELECT feed_id, feed_name, archive_ts, duration_ms, audio_url, transcript, segments, tags, '' AS context ` +
+    `FROM blotter.scanner_transcripts ` +
+    `WHERE window_id = {windowId:String} ` +
+    `AND length(transcript) > 0 ` +
+    `ORDER BY archive_ts ASC ` +
+    `LIMIT 30`;
+  return query<TranscriptResult>(sql, { windowId });
+}
+
 export async function fetchEventForTranscript(
   feedId: string,
   archiveTs: string,
 ): Promise<ScannerEvent | null> {
   const sql =
     `SELECT feed_id, archive_ts, event_ts, raw_location, normalized, ` +
-    `latitude, longitude, confidence, context, tags ` +
+    `latitude, longitude, confidence, context, tags, window_id, summary ` +
     `FROM blotter.scanner_events FINAL ` +
     `WHERE feed_id = {feedId:String} ` +
     `AND abs(toInt64(toDateTime64(archive_ts, 3)) - toInt64(toDateTime64({archiveTs:String}, 3))) < 120 ` +
@@ -114,6 +152,29 @@ export async function fetchEventForTranscript(
     `LIMIT 1`;
   const results = await query<ScannerEvent>(sql, { feedId, archiveTs });
   return results[0] ?? null;
+}
+
+export async function fetchRelatedEvents(
+  feedId: string,
+  eventTs: string,
+  latitude: number,
+  longitude: number,
+): Promise<RelatedFeedEvent[]> {
+  const sql =
+    `SELECT DISTINCT feed_id, event_ts, normalized, window_id ` +
+    `FROM blotter.scanner_events FINAL ` +
+    `WHERE h3_index IN (SELECT arrayJoin(h3kRing(geoToH3({lon:Float64}, {lat:Float64}, 9), 1))) ` +
+    `AND event_ts BETWEEN toDateTime64({eventTs:String}, 3) - INTERVAL 30 MINUTE ` +
+    `AND toDateTime64({eventTs:String}, 3) + INTERVAL 30 MINUTE ` +
+    `AND feed_id != {feedId:String} ` +
+    `ORDER BY event_ts ASC ` +
+    `LIMIT 10`;
+  return query<RelatedFeedEvent>(sql, {
+    feedId,
+    eventTs,
+    lat: String(latitude),
+    lon: String(longitude),
+  });
 }
 
 export async function searchTranscripts(

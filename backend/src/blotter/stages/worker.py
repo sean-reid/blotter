@@ -3,10 +3,10 @@ import time
 from threading import Event
 
 from blotter.config import (
-    ClickHouseConfig, GCSConfig, GoogleGeocodingConfig, GoogleNLPConfig,
-    OpenMhzConfig, RedisConfig, RegionConfig, StreamConfig, TranscriptionConfig,
+    ClickHouseConfig, EmbeddingConfig, GCSConfig, GoogleGeocodingConfig, GoogleNLPConfig,
+    OllamaConfig, OpenMhzConfig, RedisConfig, RegionConfig, StreamConfig, TranscriptionConfig,
 )
-from blotter.db import fetch_surrounding_context, get_client, has_recent_event, insert_events, insert_transcript, transcript_exists
+from blotter.db import fetch_surrounding_context, fetch_window_transcripts, get_client, has_recent_event, insert_events, insert_transcript, transcript_exists
 from blotter.gcs import get_storage
 from blotter.log import get_logger
 from blotter.models import GeocodedEvent, Transcript, TranscriptTask
@@ -62,13 +62,18 @@ def run_transcriber(
     gcs_config: GCSConfig,
     redis_config: RedisConfig,
     ch_config: ClickHouseConfig,
+    embedding_config: EmbeddingConfig | None = None,
     num_threads: int = 1,
 ) -> None:
     from threading import Thread
 
     transcriber = StreamTranscriber(transcription_config, stream_config, gcs_config)
-    # Eagerly load the model so all threads share one copy
     _ = transcriber._transcriber.model
+
+    embedder = None
+    if embedding_config and embedding_config.enabled:
+        from blotter.stages.embed import Embedder
+        embedder = Embedder(embedding_config)
     storage = get_storage(gcs_config)
     r = get_redis(redis_config)
     ch = _connect_clickhouse(ch_config)
@@ -76,6 +81,9 @@ def run_transcriber(
 
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
+
+    WINDOW_GAP_SECONDS = 60
+    _last_seen: dict[str, tuple[float, str]] = {}
 
     def _worker_loop(thread_id: int) -> None:
         log.info("transcription thread started", thread_id=thread_id)
@@ -102,6 +110,21 @@ def run_transcriber(
                 tags = extract_codes(full_text)
                 duration_ms = actual_duration_ms or task.duration_ms
 
+                chunk_epoch = task.chunk_ts.timestamp()
+                prev = _last_seen.get(task.feed_id)
+                if prev and (chunk_epoch - prev[0]) < WINDOW_GAP_SECONDS:
+                    window_id = prev[1]
+                else:
+                    window_id = f"{task.feed_id}_{task.chunk_ts.strftime('%Y%m%dT%H%M%S')}"
+                _last_seen[task.feed_id] = (chunk_epoch, window_id)
+
+                embedding: list[float] = []
+                if embedder:
+                    try:
+                        embedding = embedder.encode(full_text)
+                    except Exception:
+                        log.warning("embedding failed", feed_id=task.feed_id, exc_info=True)
+
                 transcript = Transcript(
                     feed_id=task.feed_id,
                     feed_name=task.feed_name,
@@ -111,6 +134,8 @@ def run_transcriber(
                     segments=segments,
                     full_text=full_text,
                     tags=tags,
+                    window_id=window_id,
+                    embedding=embedding,
                 )
                 insert_transcript(ch, transcript)
 
@@ -123,6 +148,7 @@ def run_transcriber(
                     segments=segments,
                     full_text=full_text,
                     tags=tags,
+                    window_id=window_id,
                 )
                 enqueue_transcript(r, tt)
 
@@ -153,10 +179,18 @@ def run_processor(
     nlp_config: GoogleNLPConfig,
     geocoding_config: GoogleGeocodingConfig,
     region_config: RegionConfig,
+    ollama_config: OllamaConfig | None = None,
 ) -> None:
     r = get_redis(redis_config)
     ch = _connect_clickhouse(ch_config)
     geocoder = Geocoder(geocoding_config, region_config)
+
+    summarizer = None
+    if ollama_config and ollama_config.enabled:
+        from blotter.stages.summarize import Summarizer
+        summarizer = Summarizer(ollama_config)
+        log.info("ollama summarizer enabled", model=ollama_config.model)
+
     stop = Event()
 
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
@@ -170,7 +204,10 @@ def run_processor(
             continue
 
         try:
-            surrounding = fetch_surrounding_context(ch, task.feed_id, str(task.chunk_ts))
+            if task.window_id:
+                surrounding = fetch_window_transcripts(ch, task.window_id)
+            else:
+                surrounding = fetch_surrounding_context(ch, task.feed_id, str(task.chunk_ts))
             context_text = surrounding if surrounding else task.full_text
 
             entities = extract_entities(context_text, nlp_config, feed_id=task.feed_id)
@@ -196,6 +233,9 @@ def run_processor(
                     continue
                 batch_coords.append((lat, lon))
                 ctx = surrounding[:500] if surrounding else e.context
+                summary = ""
+                if summarizer and len(context_text) > 100:
+                    summary = summarizer.summarize(context_text, location=name) or ""
                 events.append(GeocodedEvent(
                     feed_id=task.feed_id,
                     archive_ts=task.chunk_ts,
@@ -207,6 +247,8 @@ def run_processor(
                     confidence=e.confidence,
                     context=ctx,
                     tags=task.tags,
+                    window_id=task.window_id,
+                    summary=summary,
                 ))
 
             insert_events(ch, events)

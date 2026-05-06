@@ -107,6 +107,23 @@ class StreamConfig(BaseSettings):
         return result
 
 
+class EmbeddingConfig(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="EMBEDDING_", env_file=".env", extra="ignore")
+
+    model_name: str = "all-MiniLM-L6-v2"
+    device: str = "cpu"
+    enabled: bool = False
+
+
+class OllamaConfig(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="OLLAMA_", env_file=".env", extra="ignore")
+
+    host: str = "http://127.0.0.1:11434"
+    model: str = "qwen2.5:7b-instruct-q4_K_M"
+    enabled: bool = False
+    timeout: int = 30
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -121,6 +138,8 @@ class Settings(BaseSettings):
     redis: RedisConfig = Field(default_factory=RedisConfig)
     stream: StreamConfig = Field(default_factory=StreamConfig)
     openmhz: OpenMhzConfig = Field(default_factory=OpenMhzConfig)
+    embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
+    ollama: OllamaConfig = Field(default_factory=OllamaConfig)
 
 
 def get_settings() -> Settings:
