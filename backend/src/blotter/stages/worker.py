@@ -247,6 +247,8 @@ def run_processor(
                 if len(context_text) < 30:
                     continue
 
+                tags = extract_codes(context_text, feed_id=task.feed_id) if surrounding else task.tags
+
                 entities = extract_entities(context_text, nlp_config, feed_id=task.feed_id)
                 if not entities:
                     entities = extract_clauses(context_text)
@@ -284,7 +286,7 @@ def run_processor(
                         longitude=lon,
                         confidence=e.confidence,
                         context=ctx,
-                        tags=task.tags,
+                        tags=tags,
                         window_id=task.window_id,
                         summary=summary,
                     ))

@@ -25,7 +25,7 @@ def insert_transcript(client: Client, t: Transcript) -> None:
     tag_parts = []
     for tag in t.tags:
         label = code_label(tag, feed_id=t.feed_id)
-        tag_parts.append(f"{tag}:{label}" if label else tag)
+        tag_parts.append(f"{tag}:{label.replace(',', ' /')}" if label else tag)
     tags_str = ",".join(tag_parts)
     client.insert(
         "scanner_transcripts",
@@ -71,7 +71,7 @@ def insert_events(client: Client, events: list[GeocodedEvent]) -> None:
             e.longitude,
             e.confidence,
             e.context,
-            ",".join(f"{t}:{code_label(t, feed_id=e.feed_id)}" if code_label(t, feed_id=e.feed_id) else t for t in e.tags),
+            ",".join(f"{t}:{code_label(t, feed_id=e.feed_id).replace(',', ' /')}" if code_label(t, feed_id=e.feed_id) else t for t in e.tags),
             e.window_id,
             e.summary,
         ]

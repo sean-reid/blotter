@@ -890,7 +890,7 @@ def _make_pattern(codes: dict[str, str]) -> re.Pattern[str]:
     if not codes:
         return re.compile(r"(?!x)x")  # never matches
     keys = sorted(codes, key=len, reverse=True)
-    alt = "|".join(re.escape(k) for k in keys)
+    alt = "|".join(re.escape(k).replace(r"\-", "[-–—]") for k in keys)
     return re.compile(rf"\b(?:{alt})\b", re.IGNORECASE)
 
 
