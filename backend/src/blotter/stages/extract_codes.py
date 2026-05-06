@@ -510,6 +510,10 @@ _HPD: dict[str, str] = {
     "priority 1": "Urgent, threat to life",
     "priority 2": "Crime in progress",
     "priority 3": "Handle quickly",
+    "code 1": "Routine response",
+    "code 2": "Urgent, no sirens",
+    "code 3": "Lights & sirens",
+    "code 4": "No further help needed",
 }
 
 _APD: dict[str, str] = {
