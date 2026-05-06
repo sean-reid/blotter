@@ -212,7 +212,7 @@ def run_processor(
     ollama_config: OllamaConfig | None = None,
     num_threads: int = 2,
 ) -> None:
-    from threading import Thread
+    from threading import Lock, Thread
 
     r = get_redis(redis_config)
     geocoder = Geocoder(geocoding_config, region_config)
@@ -224,9 +224,21 @@ def run_processor(
         log.info("ollama summarizer enabled", model=ollama_config.model)
 
     stop = Event()
+    _recent_events: set[str] = set()
+    _recent_lock = Lock()
 
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
+
+    def _claim_event(name: str, ts_epoch: float) -> bool:
+        key = f"{name.lower()}|{int(ts_epoch // 600)}"
+        with _recent_lock:
+            if key in _recent_events:
+                return False
+            _recent_events.add(key)
+            if len(_recent_events) > 5000:
+                _recent_events.clear()
+            return True
 
     def _processor_loop(thread_id: int) -> None:
         ch = _connect_clickhouse(ch_config)
@@ -264,6 +276,9 @@ def run_processor(
                     if result is None:
                         continue
                     lat, lon, name = result
+                    if not _claim_event(name, task.chunk_ts.timestamp()):
+                        log.debug("skipping cross-thread duplicate", normalized=name)
+                        continue
                     if has_recent_event(ch, name, lat, lon, ref_ts=str(task.chunk_ts), minutes=10):
                         log.debug("skipping duplicate event", normalized=name)
                         continue
