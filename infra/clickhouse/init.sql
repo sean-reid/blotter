@@ -10,11 +10,21 @@ CREATE TABLE IF NOT EXISTS blotter.scanner_transcripts (
     segments      String DEFAULT '',
     tags          String DEFAULT '',
     window_id     String DEFAULT '',
-    embedding     Array(Float32) DEFAULT [],
     created_at    DateTime64(3) DEFAULT now64(3)
 ) ENGINE = MergeTree()
 ORDER BY (feed_id, archive_ts)
-TTL toDateTime(archive_ts) + INTERVAL 7 DAY;
+TTL toDateTime(archive_ts) + INTERVAL 7 DAY
+SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1073741824;
+
+CREATE TABLE IF NOT EXISTS blotter.transcript_embeddings (
+    feed_id       LowCardinality(String),
+    archive_ts    DateTime64(3),
+    embedding     Array(Float32),
+    created_at    DateTime64(3) DEFAULT now64(3)
+) ENGINE = MergeTree()
+ORDER BY (feed_id, archive_ts)
+TTL toDateTime(archive_ts) + INTERVAL 7 DAY
+SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1073741824;
 
 CREATE TABLE IF NOT EXISTS blotter.scanner_events (
     feed_id       LowCardinality(String),

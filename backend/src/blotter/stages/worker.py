@@ -6,7 +6,7 @@ from blotter.config import (
     ClickHouseConfig, EmbeddingConfig, GCSConfig, GoogleGeocodingConfig, GoogleNLPConfig,
     OllamaConfig, OpenMhzConfig, RedisConfig, RegionConfig, StreamConfig, TranscriptionConfig,
 )
-from blotter.db import fetch_surrounding_context, fetch_window_transcripts, get_client, has_recent_event, insert_events, insert_transcript, transcript_exists
+from blotter.db import TranscriptBatcher, fetch_surrounding_context, fetch_window_transcripts, get_client, has_recent_event, insert_events, transcript_exists
 from blotter.gcs import get_storage
 from blotter.log import get_logger
 from blotter.models import GeocodedEvent, Transcript, TranscriptTask
@@ -76,6 +76,7 @@ def run_transcriber(
         embedder = Embedder(embedding_config)
     storage = get_storage(gcs_config)
     r = get_redis(redis_config)
+    batcher = TranscriptBatcher(_connect_clickhouse(ch_config))
     stop = Event()
 
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
@@ -140,7 +141,7 @@ def run_transcriber(
                     window_id=window_id,
                     embedding=embedding,
                 )
-                insert_transcript(ch, transcript)
+                batcher.add(transcript)
 
                 tt = TranscriptTask(
                     feed_id=task.feed_id,
@@ -201,6 +202,7 @@ def run_transcriber(
 
     for t in threads:
         t.join(timeout=10)
+    batcher.close()
 
 
 def run_processor(
