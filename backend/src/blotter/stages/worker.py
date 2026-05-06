@@ -107,7 +107,7 @@ def run_transcriber(
                         log.debug("failed to delete empty chunk", chunk_path=task.chunk_path, exc_info=True)
                     continue
 
-                tags = extract_codes(full_text)
+                tags = extract_codes(full_text, feed_id=task.feed_id)
                 duration_ms = actual_duration_ms or task.duration_ms
 
                 chunk_epoch = task.chunk_ts.timestamp()

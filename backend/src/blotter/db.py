@@ -24,7 +24,7 @@ def insert_transcript(client: Client, t: Transcript) -> None:
     segments_json = json.dumps([s.model_dump() for s in t.segments])
     tag_parts = []
     for tag in t.tags:
-        label = code_label(tag)
+        label = code_label(tag, feed_id=t.feed_id)
         tag_parts.append(f"{tag}:{label}" if label else tag)
     tags_str = ",".join(tag_parts)
     client.insert(
@@ -71,7 +71,7 @@ def insert_events(client: Client, events: list[GeocodedEvent]) -> None:
             e.longitude,
             e.confidence,
             e.context,
-            ",".join(f"{t}:{code_label(t)}" if code_label(t) else t for t in e.tags),
+            ",".join(f"{t}:{code_label(t, feed_id=e.feed_id)}" if code_label(t, feed_id=e.feed_id) else t for t in e.tags),
             e.window_id,
             e.summary,
         ]
