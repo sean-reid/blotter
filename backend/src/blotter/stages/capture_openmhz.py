@@ -218,6 +218,7 @@ class OpenMhzCaptureManager:
             page.wait_for_timeout(15000)
 
     def _run_poll_loop(self, systems: list[str]) -> None:
+        from threading import Thread
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as p:
@@ -235,6 +236,21 @@ class OpenMhzCaptureManager:
             last_times: dict[str, int] = {s: int(time.time() * 1000) for s in systems}
             chunk_index = 0
             executor = ThreadPoolExecutor(max_workers=4)
+            self._last_poll = time.monotonic()
+
+            def _watchdog() -> None:
+                while not self._stop.is_set():
+                    time.sleep(15)
+                    if time.monotonic() - self._last_poll > 120:
+                        log.warning("poll loop stale for 2min, killing browser")
+                        try:
+                            browser.close()
+                        except Exception:
+                            pass
+                        return
+
+            wd = Thread(target=_watchdog, daemon=True, name="poll-watchdog")
+            wd.start()
 
             log.info("polling started", systems=systems)
 
@@ -250,7 +266,9 @@ class OpenMhzCaptureManager:
                                 headers: { "Accept": "application/json" }
                             }).then(r => r.text()).catch(e => JSON.stringify({error: e.message}))""",
                             api_url,
+                            timeout=15000,
                         )
+                        self._last_poll = time.monotonic()
 
                         if not result:
                             continue
