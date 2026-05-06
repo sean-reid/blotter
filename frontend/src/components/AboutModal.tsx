@@ -74,7 +74,7 @@ export default function AboutModal({ open, onClose }: Props) {
 
         <div className="px-5 py-4 space-y-4 text-[13px] leading-relaxed text-[#adbac7]">
           <p>
-            Blotter monitors public safety radio across 13 US metro areas,
+            Blotter monitors public safety radio across 20+ US metro areas,
             transcribes dispatch audio in near real-time, extracts locations,
             and plots activity on a map.
           </p>
@@ -84,10 +84,10 @@ export default function AboutModal({ open, onClose }: Props) {
               How it works
             </h3>
             <p>
-              Radio calls from OpenMHz are captured and transcribed using
-              Faster Whisper on GPU. Google Cloud NLP extracts location
-              references, which are geocoded and plotted on the map.
-              All transcripts and audio are searchable and playable.
+              Radio calls are transcribed on GPU, geocoded, and plotted
+              on the map. Related dispatches are grouped across feeds
+              and summarized by AI. All transcripts and audio are
+              searchable and playable.
             </p>
           </div>
 
