@@ -230,6 +230,7 @@ class OpenMhzCaptureManager:
                 user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
             )
             page = ctx.new_page()
+            page.set_default_timeout(15000)
 
             self._solve_challenge(page)
 
@@ -266,7 +267,6 @@ class OpenMhzCaptureManager:
                                 headers: { "Accept": "application/json" }
                             }).then(r => r.text()).catch(e => JSON.stringify({error: e.message}))""",
                             api_url,
-                            timeout=15000,
                         )
                         self._last_poll = time.monotonic()
 
