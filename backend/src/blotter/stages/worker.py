@@ -76,7 +76,6 @@ def run_transcriber(
         embedder = Embedder(embedding_config)
     storage = get_storage(gcs_config)
     r = get_redis(redis_config)
-    ch = _connect_clickhouse(ch_config)
     stop = Event()
 
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
@@ -86,6 +85,7 @@ def run_transcriber(
     _last_seen: dict[str, tuple[float, str]] = {}
 
     def _worker_loop(thread_id: int) -> None:
+        ch = _connect_clickhouse(ch_config)
         log.info("transcription thread started", thread_id=thread_id)
 
         while not stop.is_set():
