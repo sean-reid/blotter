@@ -1,3 +1,3 @@
 <clickhouse>
-    <max_server_memory_usage>8589934592</max_server_memory_usage>
+    <max_server_memory_usage>17179869184</max_server_memory_usage>
 </clickhouse>
