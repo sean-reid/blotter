@@ -117,17 +117,17 @@ def _process_call(
         m4a_path = tmpdir_path / "call.mp3"
         wav_path = tmpdir_path / "call.wav"
 
-        for attempt in range(5):
+        for attempt in range(3):
             try:
-                resp = httpx.get(audio_url, timeout=30, follow_redirects=True)
+                resp = httpx.get(audio_url, timeout=10, follow_redirects=True)
                 resp.raise_for_status()
                 m4a_path.write_bytes(resp.content)
                 break
             except Exception:
-                if attempt < 4:
-                    time.sleep(2 ** attempt)
+                if attempt < 2:
+                    time.sleep(1 + attempt)
                 else:
-                    log.warning("audio download failed after 5 attempts", system=system, url=audio_url[:100])
+                    log.warning("audio download failed", system=system, url=audio_url[:100])
                     return
 
         if not _convert_to_wav(m4a_path, wav_path):
