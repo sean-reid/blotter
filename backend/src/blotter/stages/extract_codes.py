@@ -10,6 +10,16 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 
+# ── Common response codes (standard for most US departments) ────────
+# Departments with conflicting meanings (philly, scpd) override these.
+
+_RESPONSE: dict[str, str] = {
+    "code 1": "Routine response",
+    "code 2": "Urgent, no sirens",
+    "code 3": "Lights & sirens",
+    "code 4": "No further help needed",
+}
+
 # ── 10-codes (APCO, universally recognized) ─────────────────────────
 
 _TEN: dict[str, str] = {
@@ -103,9 +113,6 @@ _CA: dict[str, str] = {
     "11-99": "Officer needs help",
     # California response codes
     "code 1": "Acknowledge",
-    "code 2": "Urgent, no sirens",
-    "code 3": "Lights & sirens",
-    "code 4": "No further help needed",
     "code 5": "Stakeout",
     "code 6": "Out for investigation",
     "code 7": "Meal break",
@@ -341,10 +348,6 @@ _NC: dict[str, str] = {
 
 # ── Agency-specific codes ────────────────────────────────────────────
 
-_LAPD: dict[str, str] = {}  # LAPD uses CA codes above
-
-_SFPD: dict[str, str] = {}  # SF-specific 900 codes are in _CA
-
 _CPD: dict[str, str] = {
     # CPD 10-code overrides (most use plain language)
     "10-1": "Officer needs help",
@@ -376,16 +379,35 @@ _CMPD: dict[str, str] = {
 }
 
 _DPD: dict[str, str] = {
-    # Dallas PD signal codes
-    "signal 5": "Meet complainant",
-    "signal 15": "Disturbance",
-    "signal 19": "Prowler",
-    "signal 25": "Burglary",
-    "signal 35": "Accident, major",
-    "signal 36": "Accident, minor",
-    "signal 63": "Shooting",
-    "code 1": "Routine response",
-    "code 3": "Lights & sirens",
+    # Dallas PD signal codes (corrected from official DPD list)
+    "signal 6": "Disturbance",
+    "signal 7": "Minor accident",
+    "signal 8": "Drunk",
+    "signal 9": "Theft",
+    "signal 11": "Burglary",
+    "signal 12": "Burglar alarm",
+    "signal 13": "Prowler",
+    "signal 14": "Cutting/stabbing",
+    "signal 15": "Assist officer",
+    "signal 16": "Injured person",
+    "signal 19": "Shooting",
+    "signal 20": "Robbery",
+    "signal 21": "Robbery alarm",
+    "signal 25": "Criminal assault",
+    "signal 26": "Missing person",
+    "signal 27": "Dead person",
+    "signal 28": "Sick person",
+    "signal 29": "Open building",
+    "signal 31": "Criminal mischief",
+    "signal 32": "Suspicious person",
+    "signal 34": "Suicide",
+    "signal 38": "Meet complainant",
+    "signal 41": "Felony in progress",
+    "signal 42": "Pursuit",
+    "signal 44": "Person in danger",
+    "signal 46": "Disturbed person",
+    "signal 63": "Cover element",
+    "code 4": "Disregard",
     "code 5": "En route",
     "code 6": "On scene",
 }
@@ -436,16 +458,12 @@ _DCFD: dict[str, str] = {
     "task force": "Multi-unit response",
     "code 1": "Dead on arrival",
     "code 2": "Return to service",
-    "code 3": "Lights & sirens",
-    "code 4": "No further help needed",
     "priority 1": "Life-threatening",
     "priority 2": "Serious but stable",
     "priority 3": "Non-emergency",
 }
 
 _LVMPD: dict[str, str] = {
-    "code 3": "Lights & sirens",
-    "code 4": "No further help needed",
     # LVMPD IDF 400-series dispatch codes
     "401": "Traffic accident",
     "401b": "Accident w/ injury",
@@ -481,28 +499,61 @@ _LVMPD: dict[str, str] = {
     "444": "Officer needs help",
     "445": "Bomb threat",
     "446": "Narcotics",
+    "447": "Civil matter",
+    # Additional commonly-dispatched IDF codes
+    "401a": "Hit and run",
+    "404a": "911 disconnect",
+    "408": "Drunk",
+    "411a": "Recovered stolen vehicle",
+    "414a": "Petit larceny",
+    "418": "Missing person",
+    "422": "Injured officer",
+    "424": "Abuse/neglect",
+    "425b": "Suspicious vehicle",
+    "428": "Child molest",
+    "429": "Indecent exposure",
+    "432": "Fraud",
+    "433": "Stolen property",
+    "437": "Keep the peace",
+    "438": "Traffic problem",
+    "441": "Malicious destruction of property",
+    "467": "Vehicle stop",
+    "468": "Person on foot",
 }
 
 _HPD: dict[str, str] = {
     # Houston PD / Harris County signal codes
     "signal 4": "Assault",
     "signal 5": "Sexual assault",
+    "signal 7": "Prowler",
     "signal 9": "Burglary in progress",
+    "signal 10": "Reckless driver",
     "signal 11": "Stabbing",
     "signal 12": "Deceased person",
     "signal 13": "Mental case",
     "signal 14": "Disturbance",
     "signal 15": "Domestic disturbance",
+    "signal 16": "Kidnapping",
+    "signal 17": "Hit and run",
+    "signal 21": "DWI",
     "signal 22": "Intoxicated driver",
     "signal 23": "Fight",
     "signal 25": "Fire",
+    "signal 26": "Wanted person",
     "signal 27": "Injured person",
+    "signal 28": "Bomb threat",
+    "signal 30": "Criminal mischief",
     "signal 32": "Person with gun",
     "signal 34": "Prowler",
+    "signal 35": "Burglary alarm",
     "signal 36": "Robbery",
     "signal 37": "Shooting",
     "signal 38": "Suspicious person",
+    "signal 39": "Narcotics",
     "signal 40": "Theft",
+    "signal 41": "Trespassing",
+    "signal 42": "Vehicle accident",
+    "signal 50": "Suspicious vehicle",
     "signal 55": "Missing person",
     "signal 58": "Robbery alarm",
     "signal 60": "Stolen car",
@@ -510,10 +561,6 @@ _HPD: dict[str, str] = {
     "priority 1": "Urgent, threat to life",
     "priority 2": "Crime in progress",
     "priority 3": "Handle quickly",
-    "code 1": "Routine response",
-    "code 2": "Urgent, no sirens",
-    "code 3": "Lights & sirens",
-    "code 4": "No further help needed",
 }
 
 _APD: dict[str, str] = {
@@ -573,8 +620,6 @@ _INDYPD: dict[str, str] = {
     "10-90": "Bank alarm",
     "10-95": "Subject in custody",
     "10-96": "Mental subject",
-    "code 3": "Lights & sirens",
-    "code 4": "No further help needed",
 }
 
 _SEATTLE: dict[str, str] = {
@@ -582,8 +627,12 @@ _SEATTLE: dict[str, str] = {
     "priority 2": "In progress",
     "priority 3": "Just occurred",
     "priority 4": "Routine",
-    "code 3": "Lights & sirens",
-    "code 4": "No further help needed",
+    # King County Sheriff 10-code overrides (differ from APCO)
+    "10-33": "Deputy needs immediate help",
+    "10-50": "Burglar alarm",
+    "10-55": "Bomb threat",
+    "10-63": "Stolen vehicle",
+    "10-65": "Armed and dangerous",
 }
 
 _PORTLAND: dict[str, str] = {
@@ -628,6 +677,19 @@ _CLEVELAND: dict[str, str] = {
     "bssa 76": "Mental",
     "bssa 88": "Bomb threat",
     "bssa 99": "Emergency, all stand by",
+    # Additional commonly-dispatched BSSA codes
+    "bssa 2": "Property damage accident",
+    "bssa 10": "Assist another unit",
+    "bssa 18": "Dog bite",
+    "bssa 24": "Drunk",
+    "bssa 28": "Fire",
+    "bssa 29": "Emergency squad",
+    "bssa 34": "Juveniles",
+    "bssa 38": "Missing person",
+    "bssa 42": "Nature unknown",
+    "bssa 64": "Vandalism",
+    "bssa 72": "Threats/harassment",
+    "bssa 78": "Alarm drop",
 }
 
 _SCPD: dict[str, str] = {
@@ -710,15 +772,22 @@ _SUMTER: dict[str, str] = {
     "signal 1": "DOA",
     "signal 2": "Gunshots",
     "signal 3": "Sexual assault",
+    "signal 4": "Reckless driving",
     "signal 5": "Arson",
     "signal 7": "Murder",
     "signal 8": "Suicide",
     "signal 10": "Drugs",
+    "signal 11": "Animal complaint",
+    "signal 13": "Juvenile",
+    "signal 14": "Forgery",
+    "signal 15": "Indecent exposure",
     "signal 17": "Injury",
     "signal 18": "Hostage",
     "signal 25": "Canine",
     "signal 26": "Loud noise",
     "signal 27": "Stalking",
+    "signal 33": "Driving under suspension",
+    "signal 34": "Traffic checkpoint",
     "signal 35": "Welfare check",
     # SC 10-code overrides (differ from APCO)
     "10-43": "Lights & sirens",
@@ -736,6 +805,14 @@ _SUMTER: dict[str, str] = {
     "10-83": "Fight in progress",
     "10-84": "Crime in progress",
     "10-85": "Alarm activation",
+}
+
+_MACOMB: dict[str, str] = {
+    # Michigan State Police priority codes (used by Macomb County)
+    "priority 1": "Emergency, lights & siren",
+    "priority 2": "Fast, lights only",
+    "priority 3": "Fast, lights & siren",
+    "priority 5": "Normal response",
 }
 
 # ── Feed → code system mapping ──────────────────────────────────────
@@ -780,7 +857,7 @@ _FEEDS: dict[str, tuple[dict[str, str], ...]] = {
     # Ohio
     "gcrn":       (_OH, _CLEVELAND),
     # Michigan
-    "mcbsimcast": (_MI,),          # Macomb County
+    "mcbsimcast": (_MI, _MACOMB),    # Macomb County
     "sc21102":    (_SC, _SUMTER),   # Sumter County SC
     # Georgia
     "apsp25":     (_GA, _APD),     # Atlanta
@@ -792,12 +869,11 @@ _FEEDS: dict[str, tuple[dict[str, str], ...]] = {
 # ── Pattern compilation (cached) ─────────────────────────────────────
 
 _ALL_CODES: dict[str, str] = {}
-for _d in [_TEN, _CA, _TX, _IL, _NY, _GA, _OH, _NV, _PA, _MD, _NJ,
-           _IN, _MI, _WA, _OR, _WI, _MN, _SC, _NC,
-           _CPD, _CMPD, _DPD, _HPD, _PHILLY, _PGPD, _BCPD, _MONROE,
-           _SCPD, _DCFD, _LVMPD, _APD, _INDYPD, _SEATTLE, _PORTLAND,
-           _CLEVELAND, _DANE, _MPLSPD, _NJUNION, _SUMTER]:
-    _ALL_CODES.update(_d)
+_ALL_CODES.update(_TEN)
+_ALL_CODES.update(_RESPONSE)
+for _dicts in _FEEDS.values():
+    for _d in _dicts:
+        _ALL_CODES.update(_d)
 
 
 _BARE_NUM = re.compile(r"^\d+$")
@@ -829,7 +905,7 @@ def _is_address(text: str, m: re.Match[str]) -> bool:
 @lru_cache(maxsize=None)
 def _for_feed(system: str) -> tuple[re.Pattern[str], dict[str, str]]:
     """Return compiled (pattern, lookup) for a feed's system prefix."""
-    parts = (_TEN,) + _FEEDS.get(system, ())
+    parts = (_TEN, _RESPONSE) + _FEEDS.get(system, ())
     merged: dict[str, str] = {}
     for d in parts:
         merged.update(d)
