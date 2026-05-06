@@ -210,9 +210,11 @@ def run_processor(
     geocoding_config: GoogleGeocodingConfig,
     region_config: RegionConfig,
     ollama_config: OllamaConfig | None = None,
+    num_threads: int = 2,
 ) -> None:
+    from threading import Thread
+
     r = get_redis(redis_config)
-    ch = _connect_clickhouse(ch_config)
     geocoder = Geocoder(geocoding_config, region_config)
 
     summarizer = None
@@ -226,70 +228,87 @@ def run_processor(
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
 
-    log.info("processing worker started")
+    def _processor_loop(thread_id: int) -> None:
+        ch = _connect_clickhouse(ch_config)
+        log.info("processor thread started", thread_id=thread_id)
 
-    while not stop.is_set():
-        task = dequeue_transcript(r, timeout=5)
-        if task is None:
-            continue
+        while not stop.is_set():
+            task = dequeue_transcript(r, timeout=5)
+            if task is None:
+                continue
 
-        try:
-            if task.window_id:
-                surrounding = fetch_window_transcripts(ch, task.window_id)
-            else:
-                surrounding = fetch_surrounding_context(ch, task.feed_id, str(task.chunk_ts))
-            context_text = surrounding if surrounding else task.full_text
+            try:
+                if task.window_id:
+                    surrounding = fetch_window_transcripts(ch, task.window_id)
+                else:
+                    surrounding = fetch_surrounding_context(ch, task.feed_id, str(task.chunk_ts))
+                context_text = surrounding if surrounding else task.full_text
 
-            entities = extract_entities(context_text, nlp_config, feed_id=task.feed_id)
-            if not entities:
-                entities = extract_clauses(context_text)
+                entities = extract_entities(context_text, nlp_config, feed_id=task.feed_id)
+                if not entities:
+                    entities = extract_clauses(context_text)
 
-            events = []
-            batch_coords: list[tuple[float, float]] = []
-            for e in entities:
-                result = geocoder.geocode(e, feed_name=task.feed_name, feed_id=task.feed_id)
-                if result is None:
-                    continue
-                lat, lon, name = result
-                if has_recent_event(ch, name, lat, lon, ref_ts=str(task.chunk_ts), minutes=10):
-                    log.debug("skipping duplicate event", normalized=name)
-                    continue
-                too_close = any(
-                    abs(lat - blat) < 0.005 and abs(lon - blon) < 0.005
-                    for blat, blon in batch_coords
-                )
-                if too_close:
-                    log.debug("skipping batch duplicate", normalized=name)
-                    continue
-                batch_coords.append((lat, lon))
-                ctx = surrounding[:500] if surrounding else e.context
                 summary = ""
                 if summarizer and len(context_text) > 100:
-                    summary = summarizer.summarize(context_text, location=name) or ""
-                events.append(GeocodedEvent(
+                    summary = summarizer.summarize(context_text) or ""
+
+                events = []
+                batch_coords: list[tuple[float, float]] = []
+                for e in entities:
+                    result = geocoder.geocode(e, feed_name=task.feed_name, feed_id=task.feed_id)
+                    if result is None:
+                        continue
+                    lat, lon, name = result
+                    if has_recent_event(ch, name, lat, lon, ref_ts=str(task.chunk_ts), minutes=10):
+                        log.debug("skipping duplicate event", normalized=name)
+                        continue
+                    too_close = any(
+                        abs(lat - blat) < 0.005 and abs(lon - blon) < 0.005
+                        for blat, blon in batch_coords
+                    )
+                    if too_close:
+                        log.debug("skipping batch duplicate", normalized=name)
+                        continue
+                    batch_coords.append((lat, lon))
+                    ctx = surrounding[:500] if surrounding else e.context
+                    events.append(GeocodedEvent(
+                        feed_id=task.feed_id,
+                        archive_ts=task.chunk_ts,
+                        event_ts=task.chunk_ts,
+                        raw_location=e.raw_text,
+                        normalized=name,
+                        latitude=lat,
+                        longitude=lon,
+                        confidence=e.confidence,
+                        context=ctx,
+                        tags=task.tags,
+                        window_id=task.window_id,
+                        summary=summary,
+                    ))
+
+                insert_events(ch, events)
+                log.info(
+                    "chunk processed",
                     feed_id=task.feed_id,
-                    archive_ts=task.chunk_ts,
-                    event_ts=task.chunk_ts,
-                    raw_location=e.raw_text,
-                    normalized=name,
-                    latitude=lat,
-                    longitude=lon,
-                    confidence=e.confidence,
-                    context=ctx,
-                    tags=task.tags,
-                    window_id=task.window_id,
-                    summary=summary,
-                ))
+                    entities=len(entities),
+                    events=len(events),
+                )
 
-            insert_events(ch, events)
-            log.info(
-                "chunk processed",
-                feed_id=task.feed_id,
-                entities=len(entities),
-                events=len(events),
-            )
+            except Exception:
+                log.error("processing failed", feed_id=task.feed_id, exc_info=True)
 
-        except Exception:
-            log.error("processing failed", feed_id=task.feed_id, exc_info=True)
+        log.info("processor thread stopped", thread_id=thread_id)
 
-    log.info("processing worker stopped")
+    log.info("processing worker started", num_threads=num_threads)
+
+    threads: list[Thread] = []
+    for i in range(num_threads):
+        t = Thread(target=_processor_loop, args=(i,), name=f"processor-{i}", daemon=True)
+        t.start()
+        threads.append(t)
+
+    while not stop.is_set():
+        stop.wait(10)
+
+    for t in threads:
+        t.join(timeout=10)
