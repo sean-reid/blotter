@@ -90,6 +90,8 @@ def _process_call(
     gcs: GCSClient | LocalStorageClient,
     r: redis.Redis,
     chunk_index: int,
+    executor=None,
+    attempt: int = 0,
 ) -> None:
     audio_url = call.get("url", "")
     tg_num = call.get("talkgroupNum", 0)
@@ -117,18 +119,19 @@ def _process_call(
         m4a_path = tmpdir_path / "call.mp3"
         wav_path = tmpdir_path / "call.wav"
 
-        for attempt in range(3):
-            try:
-                resp = httpx.get(audio_url, timeout=10, follow_redirects=True)
-                resp.raise_for_status()
-                m4a_path.write_bytes(resp.content)
-                break
-            except Exception:
-                if attempt < 2:
-                    time.sleep(1 + attempt)
-                else:
-                    log.warning("audio download failed", system=system, url=audio_url[:100])
-                    return
+        try:
+            resp = httpx.get(audio_url, timeout=10, follow_redirects=True)
+            resp.raise_for_status()
+            m4a_path.write_bytes(resp.content)
+        except Exception:
+            if attempt < 4 and executor is not None:
+                executor.submit(
+                    _process_call, call, system, gcs, r, chunk_index,
+                    executor, attempt + 1,
+                )
+            elif attempt >= 4:
+                log.debug("audio download failed", system=system, tg=tg_num)
+            return
 
         if not _convert_to_wav(m4a_path, wav_path):
             return
@@ -299,6 +302,7 @@ class OpenMhzCaptureManager:
 
                             executor.submit(
                                 _process_call, call, system, self.gcs, self.redis, chunk_index,
+                                executor,
                             )
                             chunk_index += 1
 
