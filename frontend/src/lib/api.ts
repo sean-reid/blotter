@@ -161,7 +161,7 @@ export async function fetchRelatedEvents(
   longitude: number,
 ): Promise<RelatedFeedEvent[]> {
   const sql =
-    `SELECT DISTINCT feed_id, event_ts, normalized, window_id ` +
+    `SELECT DISTINCT feed_id, event_ts, normalized, window_id, summary ` +
     `FROM blotter.scanner_events FINAL ` +
     `WHERE h3_index IN (SELECT arrayJoin(h3kRing(geoToH3({lon:Float64}, {lat:Float64}, 9), 1))) ` +
     `AND event_ts BETWEEN toDateTime64({eventTs:String}, 3) - INTERVAL 30 MINUTE ` +

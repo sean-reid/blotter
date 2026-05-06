@@ -36,6 +36,7 @@ export interface RelatedFeedEvent {
   event_ts: string;
   normalized: string;
   window_id: string;
+  summary: string;
 }
 
 export interface TimeRange {

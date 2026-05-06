@@ -453,12 +453,16 @@ export default function EventPanel({ event, onClose }: Props) {
               {relatedExpanded && (
                 <div className="mt-2 space-y-1.5">
                   {relatedEvents.map((re, i) => (
-                    <div key={i} className="flex items-baseline gap-2 text-xs text-[#adbac7]">
-                      <span className="text-[#545d68] tabular-nums shrink-0">
-                        {new Date(re.event_ts.includes("Z") ? re.event_ts : re.event_ts.replace(" ", "T") + "Z").toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                      <span className="font-medium text-[#e6edf3]">{re.feed_id}</span>
-                      <span className="truncate">{re.normalized}</span>
+                    <div key={i} className="text-xs text-[#adbac7]">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-[#545d68] tabular-nums shrink-0">
+                          {new Date(re.event_ts.includes("Z") ? re.event_ts : re.event_ts.replace(" ", "T") + "Z").toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                        <span className="font-medium text-[#e6edf3] truncate">{re.normalized}</span>
+                      </div>
+                      {re.summary && (
+                        <div className="ml-[52px] text-[11px] text-[#768390] leading-snug mt-0.5">{re.summary}</div>
+                      )}
                     </div>
                   ))}
                 </div>
