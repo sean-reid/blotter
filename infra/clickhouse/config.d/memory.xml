@@ -1,4 +1,4 @@
 <clickhouse>
-    <!-- cgroup total is ~23GB; 0.2 = ~4.6GB for ClickHouse -->
-    <max_server_memory_usage_to_ram_ratio>0.2</max_server_memory_usage_to_ram_ratio>
+    <!-- cgroup total is ~23GB; 0.35 = ~8.1GB for ClickHouse -->
+    <max_server_memory_usage_to_ram_ratio>0.35</max_server_memory_usage_to_ram_ratio>
 </clickhouse>
