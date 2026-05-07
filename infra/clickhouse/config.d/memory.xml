@@ -1,0 +1,4 @@
+<clickhouse>
+    <max_server_memory_usage>4294967296</max_server_memory_usage>
+    <max_server_memory_usage_to_ram_ratio>0</max_server_memory_usage_to_ram_ratio>
+</clickhouse>
