@@ -12,7 +12,7 @@ Real-time police scanner map covering 24 US metro areas. Per-call audio from Ope
 %%{ init: { "theme": "dark", "flowchart": { "rankSpacing": 40, "nodeSpacing": 25 } } }%%
 flowchart TB
 
-  FEEDS(["13 OpenMHz Systems<br/>LA, Chicago, Charlotte, Philly,<br/>Seattle, SF, Dallas, Portland, +5"])
+  FEEDS(["24 OpenMHz Systems<br/>LA, Chicago, Charlotte, Philly,<br/>Seattle, SF, Dallas, Portland, +16"])
 
   CAPTURE["OpenMHz Poller<br/>Playwright per-system<br/>per-call WAV download"]
 
@@ -24,16 +24,16 @@ flowchart TB
 
   EXTRACT["NLP Entity Extraction<br/>+ Google Places Geocoding<br/>per-city region bias<br/>event dedup 10min/500m"]
 
-  subgraph DB["ClickHouse 24.8"]
+  OLLAMA["Ollama · Qwen 2.5 7B<br/>one-sentence event summaries"]
+
+  subgraph DB["PostgreSQL 16"]
     direction LR
     T_TX[("scanner_transcripts")]
-    T_EV[("scanner_events<br/>ReplacingMergeTree")]
-    T_MET[("pipeline_metrics")]
+    T_EV[("scanner_events")]
   end
 
-  TUNNEL["cloudflared tunnel<br/>ch.blotter.fm"]
-  ACCESS["Cloudflare Access · mTLS"]
-  FNQUERY["/api/query · Pages Function<br/>SQL proxy, SELECT whitelist"]
+  API["Starlette API<br/>api.blotter.fm:8080"]
+  TUNNEL["cloudflared tunnel<br/>api.blotter.fm"]
   SPA["React + MapLibre SPA<br/>blotter.fm · Cloudflare Pages"]
   USER(["User · browser / mobile"])
 
@@ -41,9 +41,9 @@ flowchart TB
   GNLP["Google NLP API<br/>entity extraction"]
   GPLACES["Google Places API<br/>findplacefromtext"]
 
-  CRON["Monitoring Cron<br/>heartbeat, procs, disk,<br/>queues, services,<br/>throughput, daily digest"]
+  MON["Monitoring Loop<br/>heartbeat, procs, disk,<br/>queues, services,<br/>daily digest"]
   NTFY["ntfy.sh<br/>push alerts"]
-  CANARY["cronjob.org 15m<br/>/api/health endpoint"]
+  CANARY["cronjob.org 15m<br/>/api/canary endpoint"]
 
   DEPLOY["GitHub Actions<br/>wrangler pages deploy"]
 
@@ -52,13 +52,14 @@ flowchart TB
   Q1 --> WHISPER
   WHISPER --> Q2
   Q2 --> EXTRACT
+  EXTRACT --> OLLAMA
   WHISPER -->|"INSERT"| T_TX
   EXTRACT -->|"INSERT"| T_EV
+  OLLAMA -->|"summary"| T_EV
 
-  DB --- TUNNEL
-  TUNNEL --- ACCESS
-  ACCESS --- FNQUERY
-  FNQUERY --- SPA
+  DB --- API
+  API --- TUNNEL
+  TUNNEL --- SPA
   SPA --- USER
 
   CAPTURE -->|"upload wav"| GCS
@@ -67,9 +68,8 @@ flowchart TB
   EXTRACT --> GNLP
   EXTRACT --> GPLACES
 
-  CRON -->|"metrics"| T_MET
-  CRON -->|"alerts"| NTFY
-  CANARY -->|"health check"| FNQUERY
+  MON -->|"alerts"| NTFY
+  CANARY -->|"health check"| API
   CANARY -.->|"alert if down"| NTFY
 
   DEPLOY -->|"deploy"| SPA
@@ -83,11 +83,11 @@ flowchart TB
   classDef user fill:#475569,stroke:#94a3b8,color:#fff
 
   class Q1,Q2 queue
-  class T_TX,T_EV,T_MET,GCS db
-  class CAPTURE,WHISPER,EXTRACT stage
+  class T_TX,T_EV,GCS db
+  class CAPTURE,WHISPER,EXTRACT,OLLAMA stage
   class GNLP,GPLACES google
-  class NTFY,CANARY,CRON alert
-  class TUNNEL,ACCESS,FNQUERY,SPA serve
+  class NTFY,CANARY,MON alert
+  class TUNNEL,API,SPA serve
   class USER,FEEDS user
   class DEPLOY serve
 ```
@@ -100,14 +100,16 @@ flowchart TB
 | Transcription | faster-whisper large-v3 on CUDA GPU, locale-specific prompts |
 | NLP | Google Cloud Natural Language API |
 | Geocoding | Google Places API with per-city region biasing |
-| Database | ClickHouse (ReplacingMergeTree, 7-day TTL) |
+| Summarization | Ollama (Qwen 2.5 7B on GPU) |
+| Database | PostgreSQL 16 (pg_trgm full-text, 7-day TTL) |
 | Queues | Redis (in-memory, two-stage pipeline) |
+| API | Starlette + uvicorn (REST, CORS) |
 | Frontend | React 19, MapLibre GL, Tailwind CSS |
-| Hosting | Cloudflare Pages + Pages Functions |
-| Tunnel | Cloudflare Tunnel + Access (mTLS) |
-| Monitoring | Cron scripts, ntfy.sh push alerts, cronjob.org canary |
-| GPU | RunPod (RTX 3090) |
-| Process management | supervisord (redis, clickhouse, cloudflared, pipeline) |
+| Hosting | Cloudflare Pages (SPA) |
+| Tunnel | Cloudflare Tunnel (token-based, api.blotter.fm) |
+| Monitoring | supervisord monitoring loop, ntfy.sh push alerts, cronjob.org canary |
+| GPU | RunPod (A5000 24GB VRAM) |
+| Process management | supervisord (redis, postgres, ollama, cloudflared, api, pipeline, monitoring) |
 
 ## Project structure
 
@@ -121,9 +123,11 @@ backend/
       extract_nlp.py        # Google NLP entity extraction
       extract_codes.py      # Police/10-code/signal code tagging
       geocode.py            # Google Places geocoding with per-city bias
+      summarize.py          # Ollama event summarization
       worker.py             # Process managers (capture, transcribe, process)
     config.py               # Pydantic settings (env-based)
-    db.py                   # ClickHouse client
+    db.py                   # PostgreSQL client (psycopg)
+    api.py                  # Starlette REST API
     gcs.py                  # GCS + local storage abstraction
     queue.py                # Redis queue helpers
     models.py               # Data models
@@ -141,32 +145,28 @@ frontend/
       Tags.tsx              # Police code tag chips
       AboutModal.tsx        # About / support info
     lib/
-      api.ts                # ClickHouse query layer
+      api.ts                # REST API client
       parseTimeFilter.ts    # chrono-node time range parsing
       types.ts              # TypeScript interfaces
-  functions/api/
-    query.ts                # Pages Function: ClickHouse SQL proxy
-    health.ts               # Pages Function: canary health check
 
 infra/
-  clickhouse/init.sql       # Schema (transcripts, events, metrics)
-  cloudflared/config.yml    # Tunnel config (ch.blotter.fm)
+  postgres/
+    init.sql                # Schema (transcripts, events, embeddings)
+    pg_dump.sh              # Hourly dump to network volume
+    pg_restore.sh           # Restore from dump on startup
   supervisord/
-    supervisord.conf        # Process management (4 services)
+    supervisord.conf        # Process management (9 services)
   monitoring/
-    crontab                 # All cron schedules
+    monitoring_loop.sh      # Tick-based monitoring loop
     heartbeat.sh            # Pipeline heartbeat (events + transcripts)
     check_procs.sh          # supervisord process health
     check_disk.sh           # Disk usage + orphan chunks
     check_queues.sh         # Redis queue depths (alert > 30)
-    check_ffmpeg.sh         # Per-feed ffmpeg liveness
-    check_services.sh       # Redis/ClickHouse ping
-    check_resources.sh      # GPU/CPU/RAM metrics
-    check_throughput.sh     # Hourly per-feed transcript/event counts
+    check_services.sh       # Redis/API ping
     daily_summary.sh        # Daily digest at 9am PT
   runpod/setup.sh           # Pod bootstrap script
   caddy/Caddyfile           # Reverse proxy (local dev)
-  docker-compose.yml        # Local dev (ClickHouse + Redis + Caddy)
+  docker-compose.yml        # Local dev (PostgreSQL + Redis + Caddy)
 ```
 
 ## Local development
@@ -188,10 +188,10 @@ npm install
 npm run dev
 ```
 
-Requires: ffmpeg, Redis, ClickHouse, NVIDIA GPU with CUDA (for Whisper), Playwright.
+Requires: ffmpeg, Redis, PostgreSQL, NVIDIA GPU with CUDA (for Whisper + Ollama), Playwright.
 
 ## Deployment
 
-**Backend**: The RunPod pod boots from `infra/runpod/setup.sh`, which installs dependencies, starts supervisord (redis, clickhouse, cloudflared, pipeline), initializes the schema, and installs the monitoring crontab.
+**Backend**: The RunPod pod boots from `infra/runpod/setup.sh`, which installs dependencies, initializes PostgreSQL, starts supervisord (redis, postgres, ollama, cloudflared, api, pipeline, monitoring), and restores data from the network volume backup.
 
 **Frontend**: Auto-deploys via GitHub Actions on push to `production` branch. Manual deploy with `npx wrangler pages deploy dist --branch production` from `frontend/`.

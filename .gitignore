@@ -44,9 +44,6 @@ htmlcov/
 test-results/
 playwright-report/
 
-# ClickHouse local data
-infra/clickhouse/data/
-
 # Nominatim local data
 infra/nominatim/data/
 

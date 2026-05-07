@@ -1,7 +1,0 @@
-tunnel: 9ac46aec-60ce-4f2b-9eb8-7e1a77f59442
-credentials-file: /workspace/blotter/infra/cloudflared/credentials.json
-
-ingress:
-  - hostname: api.blotter.fm
-    service: http://localhost:8080
-  - service: http_status:404

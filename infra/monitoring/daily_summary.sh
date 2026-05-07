@@ -2,13 +2,14 @@
 # Daily digest notification
 NTFY_TOPIC=$(cat /workspace/blotter/.ntfy-secret 2>/dev/null)
 [ -z "$NTFY_TOPIC" ] && exit 0
+[ -f /workspace/blotter/.env.secrets ] && set -a && source /workspace/blotter/.env.secrets && set +a
 
-EVENTS=$(clickhouse-client -q \
-  "SELECT count() FROM blotter.scanner_events WHERE created_at > now() - INTERVAL 24 HOUR" 2>/dev/null || echo "?")
-TRANSCRIPTS=$(clickhouse-client -q \
-  "SELECT count() FROM blotter.scanner_transcripts WHERE created_at > now() - INTERVAL 24 HOUR" 2>/dev/null || echo "?")
-FEEDS=$(clickhouse-client -q \
-  "SELECT uniq(feed_id) FROM blotter.scanner_transcripts WHERE created_at > now() - INTERVAL 24 HOUR" 2>/dev/null || echo "?")
+export PGPASSWORD="${POSTGRES_PASSWORD:-}"
+PG="psql -U blotter -d blotter -tAc"
+
+EVENTS=$($PG "SELECT count(*) FROM scanner_events WHERE created_at > now() - interval '24 hours'" 2>/dev/null || echo "?")
+TRANSCRIPTS=$($PG "SELECT count(*) FROM scanner_transcripts WHERE created_at > now() - interval '24 hours'" 2>/dev/null || echo "?")
+FEEDS=$($PG "SELECT count(DISTINCT feed_id) FROM scanner_transcripts WHERE created_at > now() - interval '24 hours'" 2>/dev/null || echo "?")
 DISK=$(df -h /workspace 2>/dev/null | tail -1 | awk '{print $3 "/" $2 " (" $5 ")"}')
 
 curl -s -d "24h: ${EVENTS} events, ${TRANSCRIPTS} transcripts, ${FEEDS} feeds
