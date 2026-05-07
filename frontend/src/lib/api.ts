@@ -1,29 +1,15 @@
 import type { RelatedFeedEvent, ScannerEvent, TranscriptResult } from "./types";
 
-const QUERY_URL = "/api/query";
-
-async function query<T>(sql: string, params?: Record<string, string>): Promise<T[]> {
-  const url = new URL(QUERY_URL, window.location.origin);
-  if (params) {
-    for (const [key, value] of Object.entries(params)) {
-      url.searchParams.set(`param_${key}`, value);
-    }
+async function get<T>(path: string, params: Record<string, string>): Promise<T> {
+  const url = new URL(path, window.location.origin);
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, value);
   }
-
-  const resp = await fetch(url.toString(), {
-    method: "POST",
-    headers: { "Content-Type": "text/plain" },
-    body: sql,
-  });
+  const resp = await fetch(url.toString());
   if (!resp.ok) {
-    throw new Error(`Query failed: ${resp.status} ${await resp.text()}`);
+    throw new Error(`API error: ${resp.status} ${await resp.text()}`);
   }
-  const text = await resp.text();
-  if (!text.trim()) return [];
-  return text
-    .trim()
-    .split("\n")
-    .map((line) => JSON.parse(line) as T);
+  return resp.json();
 }
 
 export async function fetchEvents(
@@ -36,52 +22,26 @@ export async function fetchEvents(
     startTs: String(startTs),
     endTs: String(endTs),
   };
-
-  let sql =
-    `SELECT feed_id, archive_ts, event_ts, raw_location, normalized, ` +
-    `latitude, longitude, confidence, context, tags, window_id, summary ` +
-    `FROM blotter.scanner_events FINAL ` +
-    `WHERE event_ts BETWEEN fromUnixTimestamp({startTs:UInt64}) AND fromUnixTimestamp({endTs:UInt64})`;
-
   if (bounds) {
     params.west = String(bounds.west);
     params.east = String(bounds.east);
     params.south = String(bounds.south);
     params.north = String(bounds.north);
-    sql +=
-      ` AND longitude BETWEEN {west:Float64} AND {east:Float64}` +
-      ` AND latitude BETWEEN {south:Float64} AND {north:Float64}`;
   }
-
   if (search) {
-    params.search = `%${search}%`;
-    sql +=
-      ` AND (context ILIKE {search:String}` +
-      ` OR normalized ILIKE {search:String}` +
-      ` OR raw_location ILIKE {search:String}` +
-      ` OR tags ILIKE {search:String}` +
-      ` OR feed_id ILIKE {search:String}` +
-      ` OR summary ILIKE {search:String})`;
+    params.search = search;
   }
-
-  sql += ` ORDER BY event_ts DESC LIMIT 1 BY feed_id, archive_ts LIMIT 5000`;
-  return query<ScannerEvent>(sql, params);
+  return get<ScannerEvent[]>("/api/events", params);
 }
 
 export async function fetchTranscriptForEvent(
   feedId: string,
   archiveTs: string,
 ): Promise<TranscriptResult | null> {
-  const sql =
-    `SELECT feed_id, feed_name, archive_ts, duration_ms, audio_url, transcript, segments, tags, '' AS context ` +
-    `FROM blotter.scanner_transcripts ` +
-    `WHERE feed_id = {feedId:String} ` +
-    `AND length(transcript) > 0 ` +
-    `AND abs(toInt64(archive_ts) - toInt64(toDateTime64({archiveTs:String}, 3))) < 120 ` +
-    `ORDER BY abs(toInt64(archive_ts) - toInt64(toDateTime64({archiveTs:String}, 3))) ASC ` +
-    `LIMIT 1`;
-  const results = await query<TranscriptResult>(sql, { feedId, archiveTs });
-  return results[0] ?? null;
+  return get<TranscriptResult | null>("/api/transcripts/for-event", {
+    feedId,
+    archiveTs,
+  });
 }
 
 export async function fetchSurroundingTranscripts(
@@ -89,16 +49,11 @@ export async function fetchSurroundingTranscripts(
   archiveTs: string,
   windowMinutes: number = 2,
 ): Promise<TranscriptResult[]> {
-  const sql =
-    `SELECT feed_id, feed_name, archive_ts, duration_ms, audio_url, transcript, segments, tags, '' AS context ` +
-    `FROM blotter.scanner_transcripts ` +
-    `WHERE feed_id = {feedId:String} ` +
-    `AND length(transcript) > 0 ` +
-    `AND archive_ts BETWEEN toDateTime64({archiveTs:String}, 3) - INTERVAL {window:UInt32} MINUTE ` +
-    `AND toDateTime64({archiveTs:String}, 3) + INTERVAL {window:UInt32} MINUTE ` +
-    `ORDER BY archive_ts ASC ` +
-    `LIMIT 20`;
-  return query<TranscriptResult>(sql, { feedId, archiveTs, window: String(windowMinutes) });
+  return get<TranscriptResult[]>("/api/transcripts/surrounding", {
+    feedId,
+    archiveTs,
+    window: String(windowMinutes),
+  });
 }
 
 export async function fetchStreetFilteredTranscripts(
@@ -107,51 +62,28 @@ export async function fetchStreetFilteredTranscripts(
   streetName: string,
   windowMinutes: number = 10,
 ): Promise<TranscriptResult[]> {
-  const sql =
-    `SELECT feed_id, feed_name, archive_ts, duration_ms, audio_url, transcript, segments, tags, '' AS context ` +
-    `FROM blotter.scanner_transcripts ` +
-    `WHERE feed_id = {feedId:String} ` +
-    `AND length(transcript) > 0 ` +
-    `AND archive_ts BETWEEN toDateTime64({archiveTs:String}, 3) - INTERVAL {window:UInt32} MINUTE ` +
-    `AND toDateTime64({archiveTs:String}, 3) + INTERVAL {window:UInt32} MINUTE ` +
-    `AND positionCaseInsensitive(transcript, {street:String}) > 0 ` +
-    `ORDER BY archive_ts ASC ` +
-    `LIMIT 20`;
-  return query<TranscriptResult>(sql, {
+  return get<TranscriptResult[]>("/api/transcripts/street-filter", {
     feedId,
     archiveTs,
-    window: String(windowMinutes),
     street: streetName,
+    window: String(windowMinutes),
   });
 }
 
 export async function fetchIncidentTranscripts(
   windowId: string,
 ): Promise<TranscriptResult[]> {
-  const sql =
-    `SELECT feed_id, feed_name, archive_ts, duration_ms, audio_url, transcript, segments, tags, '' AS context ` +
-    `FROM blotter.scanner_transcripts ` +
-    `WHERE window_id = {windowId:String} ` +
-    `AND length(transcript) > 0 ` +
-    `ORDER BY archive_ts ASC ` +
-    `LIMIT 30`;
-  return query<TranscriptResult>(sql, { windowId });
+  return get<TranscriptResult[]>("/api/transcripts/incident", { windowId });
 }
 
 export async function fetchEventForTranscript(
   feedId: string,
   archiveTs: string,
 ): Promise<ScannerEvent | null> {
-  const sql =
-    `SELECT feed_id, archive_ts, event_ts, raw_location, normalized, ` +
-    `latitude, longitude, confidence, context, tags, window_id, summary ` +
-    `FROM blotter.scanner_events FINAL ` +
-    `WHERE feed_id = {feedId:String} ` +
-    `AND abs(toInt64(toDateTime64(archive_ts, 3)) - toInt64(toDateTime64({archiveTs:String}, 3))) < 120 ` +
-    `ORDER BY abs(toInt64(toDateTime64(archive_ts, 3)) - toInt64(toDateTime64({archiveTs:String}, 3))) ASC ` +
-    `LIMIT 1`;
-  const results = await query<ScannerEvent>(sql, { feedId, archiveTs });
-  return results[0] ?? null;
+  return get<ScannerEvent | null>("/api/events/for-transcript", {
+    feedId,
+    archiveTs,
+  });
 }
 
 export async function fetchRelatedEvents(
@@ -160,16 +92,7 @@ export async function fetchRelatedEvents(
   latitude: number,
   longitude: number,
 ): Promise<RelatedFeedEvent[]> {
-  const sql =
-    `SELECT DISTINCT feed_id, event_ts, normalized, window_id, summary ` +
-    `FROM blotter.scanner_events FINAL ` +
-    `WHERE h3_index IN (SELECT arrayJoin(h3kRing(geoToH3({lon:Float64}, {lat:Float64}, 9), 1))) ` +
-    `AND event_ts BETWEEN toDateTime64({eventTs:String}, 3) - INTERVAL 30 MINUTE ` +
-    `AND toDateTime64({eventTs:String}, 3) + INTERVAL 30 MINUTE ` +
-    `AND feed_id != {feedId:String} ` +
-    `ORDER BY event_ts ASC ` +
-    `LIMIT 10`;
-  return query<RelatedFeedEvent>(sql, {
+  return get<RelatedFeedEvent[]>("/api/events/related", {
     feedId,
     eventTs,
     lat: String(latitude),
@@ -186,28 +109,8 @@ export async function searchTranscripts(
     startTs: String(startTs),
     endTs: String(endTs),
   };
-
-  const hasSearch = !!term;
-
-  let contextExpr: string;
-  if (hasSearch) {
-    params.search = `%${term}%`;
-    params.searchRaw = term;
-    contextExpr = `substring(transcript, greatest(1, positionCaseInsensitive(transcript, {searchRaw:String}) - 120), length({searchRaw:String}) + 240) AS context`;
-  } else {
-    contextExpr = `'' AS context`;
+  if (term) {
+    params.term = term;
   }
-
-  let sql =
-    `SELECT feed_id, feed_name, archive_ts, duration_ms, audio_url, transcript, segments, tags, ${contextExpr} ` +
-    `FROM blotter.scanner_transcripts ` +
-    `WHERE length(transcript) > 0 ` +
-    `AND archive_ts BETWEEN fromUnixTimestamp({startTs:UInt64}) AND fromUnixTimestamp({endTs:UInt64})`;
-
-  if (hasSearch) {
-    sql += ` AND (transcript ILIKE {search:String} OR tags ILIKE {search:String} OR feed_id ILIKE {search:String} OR feed_name ILIKE {search:String})`;
-  }
-
-  sql += ` ORDER BY archive_ts DESC LIMIT 50`;
-  return query<TranscriptResult>(sql, params);
+  return get<TranscriptResult[]>("/api/transcripts/search", params);
 }

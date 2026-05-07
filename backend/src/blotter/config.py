@@ -2,14 +2,18 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class ClickHouseConfig(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="CLICKHOUSE_")
+class PostgresConfig(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="POSTGRES_")
 
     host: str = "localhost"
-    port: int = 8123
+    port: int = 5432
     database: str = "blotter"
-    username: str = "default"
+    user: str = "blotter"
     password: str = ""
+
+    @property
+    def conninfo(self) -> str:
+        return f"host={self.host} port={self.port} dbname={self.database} user={self.user} password={self.password}"
 
 
 class RegionConfig(BaseSettings):
@@ -130,7 +134,7 @@ class Settings(BaseSettings):
     data_dir: str = "data"
 
     region: RegionConfig = Field(default_factory=RegionConfig)
-    clickhouse: ClickHouseConfig = Field(default_factory=ClickHouseConfig)
+    postgres: PostgresConfig = Field(default_factory=PostgresConfig)
     google_geocoding: GoogleGeocodingConfig = Field(default_factory=GoogleGeocodingConfig)
     google_nlp: GoogleNLPConfig = Field(default_factory=GoogleNLPConfig)
     transcription: TranscriptionConfig = Field(default_factory=TranscriptionConfig)

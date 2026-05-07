@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-End-to-end test: audio file → transcribe → extract → geocode → ClickHouse.
+End-to-end test: audio file -> transcribe -> extract -> geocode -> PostgreSQL.
 
-Requires: ClickHouse running on localhost:8123 (via docker compose).
-Nominatim is optional — falls back to approximate coordinates if unavailable.
+Requires: PostgreSQL running on localhost:5432 (via docker compose).
 
 Usage:
     uv run --python python3.13 scripts/test_e2e.py data/test/lapd_south_5min.wav
@@ -17,8 +16,8 @@ from pathlib import Path
 src = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(src))
 
-from blotter.config import ClickHouseConfig, NominatimConfig
-from blotter.db import get_client, insert_events, insert_transcript
+from blotter.config import PostgresConfig
+from blotter.db import get_conn, insert_events, insert_transcript
 from blotter.models import GeocodedEvent, Transcript
 from blotter.stages.extract import extract_locations
 from blotter.stages.geocode import Geocoder
@@ -68,29 +67,13 @@ def transcribe_cpu(audio_path: Path) -> tuple[list, str, float]:
     return segments, full_text, info.duration
 
 
-def try_geocode(locations, nominatim_available: bool):
-    geocoder = None
-    if nominatim_available:
-        try:
-            config = NominatimConfig()
-            geocoder = Geocoder(config)
-        except Exception:
-            pass
-
+def try_geocode(locations):
     events = []
     now = datetime.now(timezone.utc)
 
     for loc in locations:
-        lat, lon = None, None
-
-        if geocoder:
-            result = geocoder.geocode(loc)
-            if result:
-                lat, lon = result
-
-        if lat is None:
-            lat = LA_CENTER_LAT + random.uniform(-0.08, 0.08)
-            lon = LA_CENTER_LON + random.uniform(-0.12, 0.12)
+        lat = LA_CENTER_LAT + random.uniform(-0.08, 0.08)
+        lon = LA_CENTER_LON + random.uniform(-0.12, 0.12)
 
         events.append(GeocodedEvent(
             feed_id=FEED_ID,
@@ -106,15 +89,6 @@ def try_geocode(locations, nominatim_available: bool):
     return events
 
 
-def check_nominatim() -> bool:
-    import httpx
-    try:
-        r = httpx.get("http://localhost:8080/status", timeout=3)
-        return r.status_code == 200
-    except Exception:
-        return False
-
-
 def main():
     if len(sys.argv) < 2:
         print("Usage: python scripts/test_e2e.py <audio_file.wav>")
@@ -125,26 +99,19 @@ def main():
         print(f"File not found: {audio_path}")
         sys.exit(1)
 
-    # 1. Check ClickHouse
-    print("Connecting to ClickHouse...")
+    # 1. Check PostgreSQL
+    print("Connecting to PostgreSQL...")
     try:
-        ch_config = ClickHouseConfig()
-        client = get_client(ch_config)
-        client.query("SELECT 1")
+        pg_config = PostgresConfig()
+        conn = get_conn(pg_config)
+        conn.execute("SELECT 1")
         print("  Connected.\n")
     except Exception as e:
-        print(f"  ClickHouse not available: {e}")
-        print("  Start it with: cd infra && docker compose up -d clickhouse caddy")
+        print(f"  PostgreSQL not available: {e}")
+        print("  Start it with: cd infra && docker compose up -d postgres")
         sys.exit(1)
 
-    # 2. Check Nominatim
-    nominatim_up = check_nominatim()
-    if nominatim_up:
-        print("Nominatim available — will geocode for real.\n")
-    else:
-        print("Nominatim not available — using approximate LA coordinates.\n")
-
-    # 3. Transcribe
+    # 2. Transcribe
     segments, full_text, duration = transcribe_cpu(audio_path)
 
     print("=" * 60)
@@ -154,7 +121,7 @@ def main():
         print(f"  [{seg.start:6.1f}s] {seg.text.strip()}")
     print()
 
-    # 4. Extract locations
+    # 3. Extract locations
     print("Extracting locations...")
     locations = extract_locations(full_text)
     print(f"  Found {len(locations)} locations.\n")
@@ -163,12 +130,12 @@ def main():
         print(f"  [{loc.confidence:.0%}] {loc.normalized}  ({loc.source})")
     print()
 
-    # 5. Geocode
+    # 4. Geocode
     print("Geocoding...")
-    events = try_geocode(locations, nominatim_up)
+    events = try_geocode(locations)
     print(f"  {len(events)} events geocoded.\n")
 
-    # 6. Insert into ClickHouse
+    # 5. Insert into PostgreSQL
     now = datetime.now(timezone.utc)
     transcript = Transcript(
         feed_id=FEED_ID,
@@ -180,18 +147,17 @@ def main():
         full_text=full_text,
     )
 
-    print("Inserting into ClickHouse...")
-    insert_transcript(client, transcript)
-    insert_events(client, events)
+    print("Inserting into PostgreSQL...")
+    insert_transcript(conn, transcript)
+    insert_events(conn, events)
     print(f"  Inserted 1 transcript + {len(events)} events.\n")
 
-    # 7. Verify
-    result = client.query("SELECT count() FROM blotter.scanner_events")
-    total = result.first_row[0]
+    # 6. Verify
+    result = conn.execute("SELECT count(*) FROM scanner_events").fetchone()
+    total = result[0] if result else 0
     print(f"Total events in database: {total}")
     print()
     print("Frontend should now show data at http://localhost:5173")
-    print("(Make sure Caddy is running: cd infra && docker compose up -d caddy)")
 
 
 if __name__ == "__main__":

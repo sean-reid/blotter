@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Test the transcription + extraction pipeline on a local audio file.
-No GPU, no ClickHouse, no Nominatim required.
+No GPU, no database, no Nominatim required.
 
 Usage:
     uv run --python python3.13 scripts/test_local.py data/test/lapd_south_5min.wav

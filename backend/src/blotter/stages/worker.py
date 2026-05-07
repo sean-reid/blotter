@@ -3,10 +3,14 @@ import time
 from threading import Event
 
 from blotter.config import (
-    ClickHouseConfig, EmbeddingConfig, GCSConfig, GoogleGeocodingConfig, GoogleNLPConfig,
-    OllamaConfig, OpenMhzConfig, RedisConfig, RegionConfig, StreamConfig, TranscriptionConfig,
+    EmbeddingConfig, GCSConfig, GoogleGeocodingConfig, GoogleNLPConfig,
+    OllamaConfig, OpenMhzConfig, PostgresConfig, RedisConfig, RegionConfig,
+    StreamConfig, TranscriptionConfig,
 )
-from blotter.db import TranscriptBatcher, fetch_surrounding_context, fetch_window_transcripts, get_client, has_recent_event, insert_events, transcript_exists
+from blotter.db import (
+    fetch_surrounding_context, fetch_window_transcripts, get_conn,
+    has_recent_event, insert_events, insert_transcript, transcript_exists,
+)
 from blotter.gcs import get_storage
 from blotter.log import get_logger
 from blotter.models import GeocodedEvent, Transcript, TranscriptTask
@@ -25,20 +29,20 @@ from blotter.stages.stream_transcribe import StreamTranscriber
 log = get_logger(__name__)
 
 
-def _connect_clickhouse(ch_config: ClickHouseConfig, stop: Event | None = None, delay: int = 5):
+def _connect_postgres(pg_config: PostgresConfig, stop: Event | None = None, delay: int = 5):
     attempt = 0
     while True:
         attempt += 1
         try:
-            ch = get_client(ch_config)
-            ch.command("SELECT 1")
+            conn = get_conn(pg_config)
+            conn.execute("SELECT 1")
             if attempt > 1:
-                log.info("clickhouse connected", after_attempts=attempt)
-            return ch
+                log.info("postgres connected", after_attempts=attempt)
+            return conn
         except Exception:
             if stop is not None and stop.is_set():
                 raise
-            log.warning("clickhouse not ready, retrying", attempt=attempt, delay=delay)
+            log.warning("postgres not ready, retrying", attempt=attempt, delay=delay)
             if stop is not None:
                 stop.wait(delay)
             else:
@@ -68,7 +72,7 @@ def run_transcriber(
     stream_config: StreamConfig,
     gcs_config: GCSConfig,
     redis_config: RedisConfig,
-    ch_config: ClickHouseConfig,
+    pg_config: PostgresConfig,
     embedding_config: EmbeddingConfig | None = None,
     num_threads: int = 1,
 ) -> None:
@@ -87,13 +91,12 @@ def run_transcriber(
         embedder = Embedder(embedding_config)
     storage = get_storage(gcs_config)
     r = get_redis(redis_config)
-    batcher = TranscriptBatcher(_connect_clickhouse(ch_config, stop))
 
     WINDOW_GAP_SECONDS = 60
     _last_seen: dict[str, tuple[float, str]] = {}
 
     def _worker_loop(thread_id: int, extra: bool = False) -> None:
-        ch = _connect_clickhouse(ch_config, stop)
+        conn = _connect_postgres(pg_config, stop)
         log.info("transcription thread started", thread_id=thread_id, extra=extra)
 
         while not stop.is_set():
@@ -105,7 +108,7 @@ def run_transcriber(
                 continue
 
             try:
-                if transcript_exists(ch, task.feed_id, str(task.chunk_ts)):
+                if transcript_exists(conn, task.feed_id, str(task.chunk_ts)):
                     log.debug("skipping duplicate transcript", feed_id=task.feed_id, archive_ts=str(task.chunk_ts))
                     continue
 
@@ -148,7 +151,7 @@ def run_transcriber(
                     window_id=window_id,
                     embedding=embedding,
                 )
-                batcher.add(transcript)
+                insert_transcript(conn, transcript)
 
                 tt = TranscriptTask(
                     feed_id=task.feed_id,
@@ -209,12 +212,11 @@ def run_transcriber(
 
     for t in threads:
         t.join(timeout=10)
-    batcher.close()
 
 
 def run_processor(
     redis_config: RedisConfig,
-    ch_config: ClickHouseConfig,
+    pg_config: PostgresConfig,
     nlp_config: GoogleNLPConfig,
     geocoding_config: GoogleGeocodingConfig,
     region_config: RegionConfig,
@@ -250,7 +252,7 @@ def run_processor(
             return True
 
     def _processor_loop(thread_id: int) -> None:
-        ch = _connect_clickhouse(ch_config, stop)
+        conn = _connect_postgres(pg_config, stop)
         log.info("processor thread started", thread_id=thread_id)
 
         while not stop.is_set():
@@ -260,9 +262,9 @@ def run_processor(
 
             try:
                 if task.window_id:
-                    surrounding = fetch_window_transcripts(ch, task.window_id)
+                    surrounding = fetch_window_transcripts(conn, task.window_id)
                 else:
-                    surrounding = fetch_surrounding_context(ch, task.feed_id, str(task.chunk_ts))
+                    surrounding = fetch_surrounding_context(conn, task.feed_id, str(task.chunk_ts))
                 context_text = surrounding if surrounding else task.full_text
 
                 if len(context_text) < 30:
@@ -288,7 +290,7 @@ def run_processor(
                     if not _claim_event(name, task.chunk_ts.timestamp()):
                         log.debug("skipping cross-thread duplicate", normalized=name)
                         continue
-                    if has_recent_event(ch, name, lat, lon, ref_ts=str(task.chunk_ts), minutes=10):
+                    if has_recent_event(conn, name, lat, lon, ref_ts=str(task.chunk_ts), minutes=10):
                         log.debug("skipping duplicate event", normalized=name)
                         continue
                     too_close = any(
@@ -315,7 +317,7 @@ def run_processor(
                         summary=summary,
                     ))
 
-                insert_events(ch, events)
+                insert_events(conn, events)
                 log.info(
                     "chunk processed",
                     feed_id=task.feed_id,

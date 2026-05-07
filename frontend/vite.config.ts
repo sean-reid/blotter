@@ -48,10 +48,9 @@ export default defineConfig({
   plugins: [react(), serveAudioData()],
   server: {
     proxy: {
-      "/api/query": {
-        target: "http://localhost:8123",
+      "/api": {
+        target: "http://localhost:8080",
         changeOrigin: true,
-        rewrite: () => "/",
       },
     },
   },
