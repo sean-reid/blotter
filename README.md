@@ -1,6 +1,6 @@
 # Blotter
 
-Real-time police scanner map covering 13 US metro areas. Per-call audio from OpenMHz is transcribed, locations are extracted and geocoded, and events are plotted on a map — all within seconds of the original dispatch.
+Real-time police scanner map covering 24 US metro areas. Per-call audio from OpenMHz is transcribed, locations are extracted and geocoded, and events are plotted on a map — all within seconds of the original dispatch.
 
 **Live at [blotter.fm](https://blotter.fm)**
 
