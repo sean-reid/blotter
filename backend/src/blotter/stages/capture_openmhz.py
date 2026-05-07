@@ -166,6 +166,16 @@ def _process_call(
         )
 
 
+def _classify_response(text: str) -> str:
+    """Classify a non-JSON response: 'blocked', 'challenge', or 'unknown'."""
+    lower = text[:1000].lower()
+    if "you have been blocked" in lower or "attention required" in lower:
+        return "blocked"
+    if "just a moment" in lower or "challenge" in lower or "<html" in lower:
+        return "challenge"
+    return "unknown"
+
+
 class OpenMhzCaptureManager:
     def __init__(
         self,
@@ -199,7 +209,7 @@ class OpenMhzCaptureManager:
                 consecutive_failures = 0
             except Exception:
                 consecutive_failures += 1
-                delay = min(10 * (2 ** min(consecutive_failures - 1, 5)), 300)
+                delay = min(30 * (2 ** min(consecutive_failures - 1, 5)), 600)
                 log.warning(
                     "browser poll loop failed, restarting",
                     failures=consecutive_failures,
@@ -210,32 +220,73 @@ class OpenMhzCaptureManager:
 
         log.info("openmhz capture manager stopped")
 
-    def _solve_challenge(self, page) -> None:
+    def _solve_challenge(self, page) -> bool:
+        """Attempt to solve Cloudflare challenge. Returns True if solved."""
         seed_url = f"{self.config.api_url}/lapdvalley/calls/newer?time=0"
-        log.info("solving cloudflare challenge")
+        log.info("solving cloudflare challenge", url=seed_url)
         page.goto(seed_url, wait_until="networkidle", timeout=30000)
-        page.wait_for_timeout(5000)
-        title = page.title()
-        if "moment" in title.lower() or "challenge" in title.lower():
-            log.warning("cloudflare challenge not solved, waiting longer")
-            page.wait_for_timeout(15000)
+        page.wait_for_timeout(3000)
+
+        for attempt in range(3):
+            title = page.title().lower()
+            body = page.content()[:1000].lower()
+
+            if "blocked" in body or "attention required" in title:
+                log.error("ip is hard-blocked by cloudflare", attempt=attempt)
+                return False
+
+            if "moment" not in title and "challenge" not in title:
+                log.info("cloudflare challenge passed", attempt=attempt)
+                return True
+
+            log.warning("cloudflare challenge active", attempt=attempt, title=page.title())
+
+            try:
+                cf_iframe = page.frame_locator("iframe[src*='challenge']").first
+                cf_iframe.locator("input[type='checkbox'], .cb-lb").click(timeout=5000)
+                log.info("clicked turnstile checkbox")
+            except Exception:
+                pass
+
+            page.wait_for_timeout(10000 + attempt * 10000)
+
+        log.error("cloudflare challenge not solved after retries")
+        return False
 
     def _run_poll_loop(self, systems: list[str]) -> None:
         from threading import Thread
-        from playwright.sync_api import sync_playwright
+        from playwright.sync_api import Error as PlaywrightError, sync_playwright
+        from playwright_stealth import Stealth
+
+        stealth = Stealth()
 
         with sync_playwright() as p:
             browser = p.chromium.launch(
                 headless=True,
-                args=["--no-sandbox", "--disable-blink-features=AutomationControlled"],
+                args=[
+                    "--no-sandbox",
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-dev-shm-usage",
+                ],
             )
             ctx = browser.new_context(
-                user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                user_agent=(
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+                ),
+                viewport={"width": 1920, "height": 1080},
+                locale="en-US",
             )
             page = ctx.new_page()
+            stealth.apply_stealth_sync(page)
             page.set_default_timeout(15000)
 
-            self._solve_challenge(page)
+            if not self._solve_challenge(page):
+                # Hard-blocked — long backoff, don't spam Cloudflare
+                log.error("hard-blocked, backing off 30 min")
+                browser.close()
+                self._stop.wait(1800)
+                return
 
             last_times: dict[str, int] = {s: int(time.time() * 1000) for s in systems}
             chunk_index = 0
@@ -281,12 +332,35 @@ class OpenMhzCaptureManager:
                         try:
                             data = json.loads(result)
                         except json.JSONDecodeError:
-                            if "challenge" in result.lower() or "<html" in result.lower():
+                            kind = _classify_response(result)
+
+                            if kind == "blocked":
+                                log.error("ip hard-blocked mid-session, backing off 30 min")
+                                browser.close()
+                                self._stop.wait(1800)
+                                return
+
+                            if kind == "challenge":
                                 consecutive_challenges += 1
-                                backoff = min(30 * (2 ** min(consecutive_challenges - 1, 4)), 300)
-                                log.warning("cloudflare challenge detected", attempt=consecutive_challenges, backoff=backoff)
-                                self._solve_challenge(page)
+                                if consecutive_challenges >= 5:
+                                    log.error("5 consecutive challenges, recycling browser")
+                                    browser.close()
+                                    self._stop.wait(300)
+                                    return
+
+                                backoff = min(60 * (2 ** min(consecutive_challenges - 1, 3)), 600)
+                                log.warning(
+                                    "cloudflare challenge detected",
+                                    attempt=consecutive_challenges,
+                                    backoff=backoff,
+                                )
+                                solved = self._solve_challenge(page)
                                 self._last_poll = time.monotonic()
+                                if not solved:
+                                    log.error("challenge solve failed, recycling browser")
+                                    browser.close()
+                                    self._stop.wait(1800)
+                                    return
                                 self._stop.wait(backoff)
                                 challenge_hit = True
                                 break
@@ -331,6 +405,9 @@ class OpenMhzCaptureManager:
                             seen_count = self.redis.scard(seen_key)
                             log.info("poll cycle", system=system, new_calls=new_calls, total_seen=seen_count)
 
+                    except PlaywrightError:
+                        log.warning("browser dead, restarting", system=system)
+                        raise
                     except Exception:
                         log.warning("poll cycle failed", system=system, exc_info=True)
 
