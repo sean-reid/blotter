@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 import psycopg
 from psycopg.rows import dict_row
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -220,7 +222,15 @@ async def health(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok" if count > 0 else "down", "transcripts_20min": count})
 
 
-app = Starlette(routes=[
+app = Starlette(
+    middleware=[
+        Middleware(CORSMiddleware, allow_origins=[
+            "https://blotter.fm",
+            "https://staging.blotter.fm",
+            "http://localhost:5173",
+        ], allow_methods=["GET"], allow_headers=["*"]),
+    ],
+    routes=[
     Route("/api/events", events),
     Route("/api/transcripts/for-event", transcript_for_event),
     Route("/api/transcripts/surrounding", surrounding_transcripts),

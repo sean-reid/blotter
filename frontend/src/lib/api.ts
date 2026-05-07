@@ -1,7 +1,9 @@
 import type { RelatedFeedEvent, ScannerEvent, TranscriptResult } from "./types";
 
+const API_BASE = import.meta.env.VITE_API_URL || "";
+
 async function get<T>(path: string, params: Record<string, string>): Promise<T> {
-  const url = new URL(path, window.location.origin);
+  const url = new URL(path, API_BASE || window.location.origin);
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
   }
