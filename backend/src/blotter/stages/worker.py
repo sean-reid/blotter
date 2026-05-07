@@ -25,17 +25,24 @@ from blotter.stages.stream_transcribe import StreamTranscriber
 log = get_logger(__name__)
 
 
-def _connect_clickhouse(ch_config: ClickHouseConfig, max_retries: int = 30, delay: int = 5):
-    for attempt in range(1, max_retries + 1):
+def _connect_clickhouse(ch_config: ClickHouseConfig, stop: Event | None = None, delay: int = 5):
+    attempt = 0
+    while True:
+        attempt += 1
         try:
             ch = get_client(ch_config)
             ch.command("SELECT 1")
+            if attempt > 1:
+                log.info("clickhouse connected", after_attempts=attempt)
             return ch
         except Exception:
-            if attempt == max_retries:
+            if stop is not None and stop.is_set():
                 raise
             log.warning("clickhouse not ready, retrying", attempt=attempt, delay=delay)
-            time.sleep(delay)
+            if stop is not None:
+                stop.wait(delay)
+            else:
+                time.sleep(delay)
 
 
 def run_capture(
@@ -70,23 +77,23 @@ def run_transcriber(
     transcriber = StreamTranscriber(transcription_config, stream_config, gcs_config)
     _ = transcriber._transcriber.model
 
+    stop = Event()
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    signal.signal(signal.SIGINT, lambda *_: stop.set())
+
     embedder = None
     if embedding_config and embedding_config.enabled:
         from blotter.stages.embed import Embedder
         embedder = Embedder(embedding_config)
     storage = get_storage(gcs_config)
     r = get_redis(redis_config)
-    batcher = TranscriptBatcher(_connect_clickhouse(ch_config))
-    stop = Event()
-
-    signal.signal(signal.SIGTERM, lambda *_: stop.set())
-    signal.signal(signal.SIGINT, lambda *_: stop.set())
+    batcher = TranscriptBatcher(_connect_clickhouse(ch_config, stop))
 
     WINDOW_GAP_SECONDS = 60
     _last_seen: dict[str, tuple[float, str]] = {}
 
     def _worker_loop(thread_id: int, extra: bool = False) -> None:
-        ch = _connect_clickhouse(ch_config)
+        ch = _connect_clickhouse(ch_config, stop)
         log.info("transcription thread started", thread_id=thread_id, extra=extra)
 
         while not stop.is_set():
@@ -243,7 +250,7 @@ def run_processor(
             return True
 
     def _processor_loop(thread_id: int) -> None:
-        ch = _connect_clickhouse(ch_config)
+        ch = _connect_clickhouse(ch_config, stop)
         log.info("processor thread started", thread_id=thread_id)
 
         while not stop.is_set():
