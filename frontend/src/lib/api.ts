@@ -1,6 +1,7 @@
 import type { RelatedFeedEvent, ScannerEvent, TranscriptResult } from "./types";
 
-const API_BASE = import.meta.env.VITE_API_URL || "";
+const API_BASE = import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD ? "https://api.blotter.fm" : "");
 
 async function get<T>(path: string, params: Record<string, string>): Promise<T> {
   const url = new URL(path, API_BASE || window.location.origin);
