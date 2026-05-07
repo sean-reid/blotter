@@ -11,24 +11,24 @@ log = get_logger(__name__)
 def extract(feed_id: str) -> None:
     """Extract locations and geocode for a feed's transcripts."""
     settings = get_settings()
-    from blotter.db import get_client, insert_events
+    from blotter.db import get_conn, insert_events
     from blotter.models import GeocodedEvent
     from blotter.stages.extract import extract_clauses
     from blotter.stages.extract_nlp import extract_entities
     from blotter.stages.geocode import Geocoder
 
-    client = get_client(settings.clickhouse)
+    conn = get_conn(settings.postgres)
     geocoder = Geocoder(settings.google_geocoding, settings.region)
 
-    rows = client.query(
-        "SELECT feed_id, archive_ts, transcript FROM blotter.scanner_transcripts "
-        "WHERE feed_id = {feed_id:String} "
-        "AND (feed_id, archive_ts) NOT IN "
-        "(SELECT feed_id, archive_ts FROM blotter.scanner_events)",
-        parameters={"feed_id": feed_id},
-    )
+    rows = conn.execute(
+        """SELECT feed_id, archive_ts, transcript FROM scanner_transcripts
+           WHERE feed_id = %s
+           AND (feed_id, archive_ts) NOT IN
+           (SELECT feed_id, archive_ts FROM scanner_events)""",
+        (feed_id,),
+    ).fetchall()
 
-    for row in rows.result_rows:
+    for row in rows:
         fid, archive_ts, transcript = row
         nlp_entities = extract_entities(transcript, settings.google_nlp, feed_id=fid)
         clauses = nlp_entities if nlp_entities else extract_clauses(transcript)
@@ -49,7 +49,7 @@ def extract(feed_id: str) -> None:
                 confidence=0.8,
                 context=clause.context,
             ))
-        insert_events(client, events)
+        insert_events(conn, events)
         typer.echo(f"extracted: {archive_ts} -> {len(events)} events")
 
 
@@ -92,7 +92,7 @@ def stream_start(
         from blotter.stages.worker import run_transcriber
         p = multiprocessing.Process(
             target=run_transcriber,
-            args=(settings.transcription, settings.stream, settings.gcs, settings.redis, settings.clickhouse, settings.embedding, transcriber_workers),
+            args=(settings.transcription, settings.stream, settings.gcs, settings.redis, settings.postgres, settings.embedding, transcriber_workers),
             name="transcriber",
         )
         procs.append(p)
@@ -101,7 +101,7 @@ def stream_start(
         from blotter.stages.worker import run_processor
         p = multiprocessing.Process(
             target=run_processor,
-            args=(settings.redis, settings.clickhouse, settings.google_nlp, settings.google_geocoding, settings.region, settings.ollama),
+            args=(settings.redis, settings.postgres, settings.google_nlp, settings.google_geocoding, settings.region, settings.ollama),
             name="processor",
         )
         procs.append(p)

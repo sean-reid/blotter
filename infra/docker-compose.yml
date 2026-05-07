@@ -1,19 +1,15 @@
 services:
-  clickhouse:
-    image: clickhouse/clickhouse-server:24.8
+  postgres:
+    image: postgres:16-alpine
     ports:
-      - "127.0.0.1:8123:8123"
-      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:5432:5432"
     volumes:
-      - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql
-      - ./clickhouse/users.xml:/etc/clickhouse-server/users.d/users.xml
-      - clickhouse_data:/var/lib/clickhouse
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - postgres_data:/var/lib/postgresql/data
     environment:
-      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
-    ulimits:
-      nofile:
-        soft: 262144
-        hard: 262144
+      POSTGRES_DB: blotter
+      POSTGRES_USER: blotter
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-blotter_pg_s3cret}
 
   redis:
     image: redis:7-alpine
@@ -38,10 +34,10 @@ services:
       - ./cloudflared/config.yml:/etc/cloudflared/config.yml
       - ./cloudflared/credentials.json:/etc/cloudflared/credentials.json
     depends_on:
-      - clickhouse
+      - postgres
     restart: unless-stopped
 
 volumes:
-  clickhouse_data:
+  postgres_data:
   redis_data:
   caddy_data:

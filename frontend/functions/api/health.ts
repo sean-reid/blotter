@@ -1,7 +1,5 @@
 interface Env {
-	CLICKHOUSE_URL: string;
-	CLICKHOUSE_USER: string;
-	CLICKHOUSE_PASSWORD: string;
+	BACKEND_URL: string;
 	CF_ACCESS_CLIENT_ID: string;
 	CF_ACCESS_CLIENT_SECRET: string;
 	NTFY_TOPIC: string;
@@ -16,40 +14,30 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 		return new Response("unauthorized", { status: 401 });
 	}
 
-	const chUrl = new URL(env.CLICKHOUSE_URL);
-	chUrl.searchParams.set("default_format", "JSONEachRow");
-
 	try {
-		const resp = await fetch(chUrl.toString(), {
-			method: "POST",
+		const backendUrl = new URL("/api/health", env.BACKEND_URL);
+		const resp = await fetch(backendUrl.toString(), {
 			headers: {
-				"Content-Type": "text/plain",
-				"X-ClickHouse-User": env.CLICKHOUSE_USER,
-				"X-ClickHouse-Key": env.CLICKHOUSE_PASSWORD,
 				"CF-Access-Client-Id": env.CF_ACCESS_CLIENT_ID,
 				"CF-Access-Client-Secret": env.CF_ACCESS_CLIENT_SECRET,
 			},
-			body: "SELECT count() as c FROM blotter.scanner_transcripts WHERE created_at > now() - INTERVAL 20 MINUTE",
 		});
 
 		if (!resp.ok) {
-			await notify(env, "Canary: ClickHouse error", `ClickHouse returned ${resp.status}`);
-			return new Response("clickhouse error", { status: 502 });
+			await notify(env, "Canary: backend error", `Backend returned ${resp.status}`);
+			return new Response("backend error", { status: 502 });
 		}
 
-		const text = await resp.text();
-		const row = JSON.parse(text.trim().split("\n")[0]);
-		const count = Number(row.c);
-
-		if (count === 0) {
+		const data: { status: string; transcripts_20min: number } = await resp.json();
+		if (data.status !== "ok") {
 			await notify(env, "Canary: pipeline down", "0 transcripts in last 20 min. Pod may be preempted or tunnel down.");
 			return new Response("down", { status: 503 });
 		}
 
-		return new Response(`ok: ${count} transcripts in last 20 min`, { status: 200 });
+		return new Response(`ok: ${data.transcripts_20min} transcripts in last 20 min`, { status: 200 });
 	} catch (e: unknown) {
 		const msg = e instanceof Error ? e.message : String(e);
-		await notify(env, "Canary: unreachable", `Failed to reach ClickHouse: ${msg}`);
+		await notify(env, "Canary: unreachable", `Failed to reach backend: ${msg}`);
 		return new Response("unreachable", { status: 502 });
 	}
 };

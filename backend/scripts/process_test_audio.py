@@ -1,13 +1,13 @@
-"""Process test audio files through the full pipeline: Whisper -> NLP -> Places -> ClickHouse."""
+"""Process test audio files through the full pipeline: Whisper -> NLP -> Places -> PostgreSQL."""
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 from blotter.config import (
-    ClickHouseConfig, GoogleGeocodingConfig, GoogleNLPConfig,
+    GoogleGeocodingConfig, GoogleNLPConfig, PostgresConfig,
     RegionConfig, TranscriptionConfig,
 )
-from blotter.db import get_client, insert_events, insert_transcript
+from blotter.db import get_conn, insert_events, insert_transcript
 from blotter.log import get_logger
 from blotter.models import GeocodedEvent, Transcript
 from blotter.stages.extract import extract_clauses, strip_ads
@@ -30,7 +30,7 @@ FEED_NAMES = {
 def process_file(
     wav_path: Path,
     feed_id: str,
-    ch, geocoder, transcriber, nlp_config,
+    conn, geocoder, transcriber, nlp_config,
 ):
     feed_name = FEED_NAMES.get(feed_id, feed_id)
     now = datetime.now(timezone.utc)
@@ -53,7 +53,7 @@ def process_file(
         segments=segments,
         full_text=full_text,
     )
-    insert_transcript(ch, transcript)
+    insert_transcript(conn, transcript)
 
     entities = extract_entities(full_text, nlp_config)
     if not entities:
@@ -77,14 +77,14 @@ def process_file(
             context=e.context,
         ))
 
-    insert_events(ch, events)
+    insert_events(conn, events)
     print(f"Events: {len(events)}")
     for ev in events:
         print(f"  {ev.normalized} ({ev.latitude:.4f}, {ev.longitude:.4f})")
 
 
 def main():
-    ch = get_client(ClickHouseConfig())
+    conn = get_conn(PostgresConfig())
     region = RegionConfig()
     geocoder = Geocoder(GoogleGeocodingConfig(), region)
     transcriber = Transcriber(TranscriptionConfig())
@@ -112,7 +112,7 @@ def main():
             if prefix in wav.stem:
                 feed_id = fid
                 break
-        process_file(wav, feed_id, ch, geocoder, transcriber, nlp_config)
+        process_file(wav, feed_id, conn, geocoder, transcriber, nlp_config)
 
     print(f"\nDone. Processed {len(files)} files.")
 
