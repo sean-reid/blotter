@@ -1,6 +1,5 @@
 #!/bin/bash
-# Single monitoring loop replacing crontab. Managed by supervisord.
-# Runs checks at their original cron intervals using a tick counter.
+# Single monitoring loop managed by supervisord.
 # Tick = 60s. 2min checks run every 2 ticks, 5min every 5, etc.
 set -a
 [ -f /workspace/blotter/.env.secrets ] && source /workspace/blotter/.env.secrets
@@ -18,14 +17,13 @@ while true; do
     bash "$DIR/check_services.sh" 2>/dev/null
   fi
 
-  # Every 5 min: heartbeat, disk, queues, resources + memory alert
+  # Every 5 min: heartbeat, disk, queues
   if [ $((TICK % 5)) -eq 0 ]; then
     bash "$DIR/heartbeat.sh" 2>/dev/null
     bash "$DIR/check_disk.sh" 2>/dev/null
     bash "$DIR/check_queues.sh" 2>/dev/null
-    bash "$DIR/check_resources.sh" 2>/dev/null
 
-    # Memory alert (not in original crontab)
+    # Memory alert
     NTFY_TOPIC=$(cat /workspace/blotter/.ntfy-secret 2>/dev/null)
     TOTAL_KB=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
     AVAIL_KB=$(awk '/MemAvailable/ {print $2}' /proc/meminfo)
@@ -40,12 +38,7 @@ while true; do
     fi
   fi
 
-  # Every hour
-  if [ $((TICK % 60)) -eq 0 ]; then
-    bash "$DIR/check_throughput.sh" 2>/dev/null
-  fi
-
-  # Daily at ~16:00 UTC (9am PT) — check once per minute window
+  # Daily at ~16:00 UTC (9am PT)
   HOUR=$(date -u +%H)
   MIN=$(date -u +%M)
   if [ "$HOUR" = "16" ] && [ "$MIN" = "00" ]; then

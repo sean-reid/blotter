@@ -3,17 +3,13 @@
 NTFY_TOPIC=$(cat /workspace/blotter/.ntfy-secret 2>/dev/null)
 STATE_DIR="/workspace/blotter/infra/monitoring/state"
 mkdir -p "$STATE_DIR"
+[ -f /workspace/blotter/.env.secrets ] && set -a && source /workspace/blotter/.env.secrets && set +a
 
-TRANSCRIPT_COUNT=$(clickhouse-client -q \
-  "SELECT count() FROM blotter.scanner_transcripts WHERE created_at > now() - INTERVAL 15 MINUTE" 2>/dev/null || echo -1)
+export PGPASSWORD="${POSTGRES_PASSWORD:-}"
+PG="psql -U blotter -d blotter -tAc"
 
-EVENT_COUNT=$(clickhouse-client -q \
-  "SELECT count() FROM blotter.scanner_events WHERE created_at > now() - INTERVAL 15 MINUTE" 2>/dev/null || echo -1)
-
-clickhouse-client -q \
-  "INSERT INTO blotter.pipeline_metrics (metric, value) VALUES
-   ('events.count_15m', ${EVENT_COUNT}),
-   ('transcripts.count_15m', ${TRANSCRIPT_COUNT})" 2>/dev/null
+TRANSCRIPT_COUNT=$($PG "SELECT count(*) FROM scanner_transcripts WHERE created_at > now() - interval '15 minutes'" 2>/dev/null || echo -1)
+EVENT_COUNT=$($PG "SELECT count(*) FROM scanner_events WHERE created_at > now() - interval '15 minutes'" 2>/dev/null || echo -1)
 
 if [ "${TRANSCRIPT_COUNT}" -eq 0 ]; then
   PREV=$(cat "$STATE_DIR/transcript_zero" 2>/dev/null || echo 0)

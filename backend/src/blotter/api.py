@@ -1,13 +1,15 @@
 import json
+import os
 from datetime import datetime, timezone
 
+import httpx
 import psycopg
 from psycopg.rows import dict_row
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Route
 
 from blotter.config import PostgresConfig
@@ -222,6 +224,28 @@ async def health(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok" if count > 0 else "down", "transcripts_20min": count})
 
 
+_NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "")
+_CANARY_SECRET = os.environ.get("CANARY_SECRET", "")
+
+
+async def canary(request: Request) -> PlainTextResponse:
+    if request.query_params.get("key") != _CANARY_SECRET or not _CANARY_SECRET:
+        return PlainTextResponse("unauthorized", status_code=401)
+    row = _conn().execute(
+        "SELECT count(*) AS c FROM scanner_transcripts WHERE created_at > now() - interval '20 minutes'"
+    ).fetchone()
+    count = row["c"] if row else 0
+    if count == 0 and _NTFY_TOPIC:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"https://ntfy.sh/{_NTFY_TOPIC}",
+                headers={"Title": "Canary: pipeline down", "Priority": "urgent", "Tags": "rotating_light"},
+                content="0 transcripts in last 20 min. Pod may be preempted.",
+            )
+        return PlainTextResponse("down", status_code=503)
+    return PlainTextResponse(f"ok: {count} transcripts in last 20 min")
+
+
 app = Starlette(
     middleware=[
         Middleware(CORSMiddleware, allow_origins=[
@@ -240,4 +264,5 @@ app = Starlette(
     Route("/api/events/related", related_events),
     Route("/api/transcripts/search", search_transcripts),
     Route("/api/health", health),
+    Route("/api/canary", canary),
 ])

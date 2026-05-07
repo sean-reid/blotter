@@ -5,7 +5,6 @@ set -a
 set +a
 export PATH=/root/.local/bin:$PATH
 
-pkill -9 clickhouse-server 2>/dev/null
 pkill -9 redis-server 2>/dev/null
 pkill -9 cloudflared 2>/dev/null
 pkill -9 -f 'blotter stream' 2>/dev/null
