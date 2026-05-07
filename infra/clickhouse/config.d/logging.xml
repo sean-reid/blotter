@@ -1,0 +1,9 @@
+<clickhouse>
+    <logger>
+        <log>/workspace/clickhouse-logs/clickhouse-server.log</log>
+        <errorlog>/workspace/clickhouse-logs/clickhouse-server.err.log</errorlog>
+        <level>warning</level>
+        <size>50M</size>
+        <count>3</count>
+    </logger>
+</clickhouse>
