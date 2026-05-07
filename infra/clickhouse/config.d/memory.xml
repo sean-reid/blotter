@@ -1,4 +1,7 @@
 <clickhouse>
-    <!-- cgroup total is ~23GB; 0.35 = ~8.1GB for ClickHouse -->
-    <max_server_memory_usage_to_ram_ratio>0.35</max_server_memory_usage_to_ram_ratio>
+    <!-- cgroup total is ~23GB; 0.6 = ~14GB for ClickHouse (RSS overhead ~4GB above tracked) -->
+    <max_server_memory_usage_to_ram_ratio>0.6</max_server_memory_usage_to_ram_ratio>
+    <mark_cache_size>134217728</mark_cache_size>
+    <uncompressed_cache_size>0</uncompressed_cache_size>
+    <mmap_cache_size>0</mmap_cache_size>
 </clickhouse>
