@@ -16,7 +16,7 @@ from blotter.log import get_logger
 from blotter.models import GeocodedEvent, Transcript, TranscriptTask
 from blotter.queue import (
     dequeue_chunk, dequeue_transcript, enqueue_transcript, get_redis,
-    queue_depth, CAPTURE_QUEUE, TRANSCRIPT_QUEUE,
+    queue_depth, CAPTURE_QUEUE,
 )
 from blotter.stages.capture import CaptureManager
 from blotter.stages.capture_openmhz import OpenMhzCaptureManager
@@ -95,120 +95,108 @@ def run_transcriber(
     WINDOW_GAP_SECONDS = 60
     _last_seen: dict[str, tuple[float, str]] = {}
 
-    def _worker_loop(thread_id: int, extra: bool = False) -> None:
+    def _worker_loop(thread_id: int) -> None:
         conn = _connect_postgres(pg_config, stop)
-        log.info("transcription thread started", thread_id=thread_id, extra=extra)
+        log.info("transcription thread started", thread_id=thread_id)
 
-        while not stop.is_set():
-            task = dequeue_chunk(r, timeout=5)
-            if task is None:
-                if extra and queue_depth(r, CAPTURE_QUEUE) < SCALE_DOWN_THRESHOLD:
-                    log.info("extra thread exiting, backlog clear", thread_id=thread_id)
-                    return
-                continue
+        try:
+            while not stop.is_set():
+                task = dequeue_chunk(r, timeout=5)
+                if task is None:
+                    continue
 
+                try:
+                    if transcript_exists(conn, task.feed_id, str(task.chunk_ts)):
+                        log.debug("skipping duplicate transcript", feed_id=task.feed_id, archive_ts=str(task.chunk_ts))
+                        continue
+
+                    segments, full_text, actual_duration_ms = transcriber.process_chunk(task)
+
+                    if not full_text:
+                        try:
+                            storage.delete(task.chunk_path)
+                        except Exception:
+                            log.debug("failed to delete empty chunk", chunk_path=task.chunk_path, exc_info=True)
+                        continue
+
+                    tags = extract_codes(full_text, feed_id=task.feed_id)
+                    duration_ms = actual_duration_ms or task.duration_ms
+
+                    chunk_epoch = task.chunk_ts.timestamp()
+                    prev = _last_seen.get(task.feed_id)
+                    if prev and (chunk_epoch - prev[0]) < WINDOW_GAP_SECONDS:
+                        window_id = prev[1]
+                    else:
+                        window_id = f"{task.feed_id}_{task.chunk_ts.strftime('%Y%m%dT%H%M%S')}"
+                    _last_seen[task.feed_id] = (chunk_epoch, window_id)
+
+                    embedding: list[float] = []
+                    if embedder:
+                        try:
+                            embedding = embedder.encode(full_text)
+                        except Exception:
+                            log.warning("embedding failed", feed_id=task.feed_id, exc_info=True)
+
+                    transcript = Transcript(
+                        feed_id=task.feed_id,
+                        feed_name=task.feed_name,
+                        archive_ts=task.chunk_ts,
+                        duration_ms=duration_ms,
+                        audio_url=task.audio_url,
+                        segments=segments,
+                        full_text=full_text,
+                        tags=tags,
+                        window_id=window_id,
+                        embedding=embedding,
+                    )
+                    insert_transcript(conn, transcript)
+
+                    tt = TranscriptTask(
+                        feed_id=task.feed_id,
+                        feed_name=task.feed_name,
+                        chunk_ts=task.chunk_ts,
+                        duration_ms=duration_ms,
+                        audio_url=task.audio_url,
+                        segments=segments,
+                        full_text=full_text,
+                        tags=tags,
+                        window_id=window_id,
+                    )
+                    enqueue_transcript(r, tt)
+
+                    depth = queue_depth(r, CAPTURE_QUEUE)
+                    if depth > 50:
+                        log.warning("transcription backlog", depth=depth)
+
+                except Exception:
+                    log.error("transcription failed", feed_id=task.feed_id, exc_info=True)
+                    try:
+                        conn.execute("SELECT 1")
+                    except Exception:
+                        log.warning("pg connection lost, reconnecting", thread_id=thread_id)
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        conn = _connect_postgres(pg_config, stop)
+        finally:
             try:
-                if transcript_exists(conn, task.feed_id, str(task.chunk_ts)):
-                    log.debug("skipping duplicate transcript", feed_id=task.feed_id, archive_ts=str(task.chunk_ts))
-                    continue
-
-                segments, full_text, actual_duration_ms = transcriber.process_chunk(task)
-
-                if not full_text:
-                    try:
-                        storage.delete(task.chunk_path)
-                    except Exception:
-                        log.debug("failed to delete empty chunk", chunk_path=task.chunk_path, exc_info=True)
-                    continue
-
-                tags = extract_codes(full_text, feed_id=task.feed_id)
-                duration_ms = actual_duration_ms or task.duration_ms
-
-                chunk_epoch = task.chunk_ts.timestamp()
-                prev = _last_seen.get(task.feed_id)
-                if prev and (chunk_epoch - prev[0]) < WINDOW_GAP_SECONDS:
-                    window_id = prev[1]
-                else:
-                    window_id = f"{task.feed_id}_{task.chunk_ts.strftime('%Y%m%dT%H%M%S')}"
-                _last_seen[task.feed_id] = (chunk_epoch, window_id)
-
-                embedding: list[float] = []
-                if embedder:
-                    try:
-                        embedding = embedder.encode(full_text)
-                    except Exception:
-                        log.warning("embedding failed", feed_id=task.feed_id, exc_info=True)
-
-                transcript = Transcript(
-                    feed_id=task.feed_id,
-                    feed_name=task.feed_name,
-                    archive_ts=task.chunk_ts,
-                    duration_ms=duration_ms,
-                    audio_url=task.audio_url,
-                    segments=segments,
-                    full_text=full_text,
-                    tags=tags,
-                    window_id=window_id,
-                    embedding=embedding,
-                )
-                insert_transcript(conn, transcript)
-
-                tt = TranscriptTask(
-                    feed_id=task.feed_id,
-                    feed_name=task.feed_name,
-                    chunk_ts=task.chunk_ts,
-                    duration_ms=duration_ms,
-                    audio_url=task.audio_url,
-                    segments=segments,
-                    full_text=full_text,
-                    tags=tags,
-                    window_id=window_id,
-                )
-                enqueue_transcript(r, tt)
-
-                depth = queue_depth(r, CAPTURE_QUEUE)
-                if depth > 50:
-                    log.warning("transcription backlog", depth=depth)
-
+                conn.close()
             except Exception:
-                log.error("transcription failed", feed_id=task.feed_id, exc_info=True)
+                pass
 
         log.info("transcription thread stopped", thread_id=thread_id)
 
-    MIN_THREADS = num_threads
-    MAX_THREADS = num_threads + 4
-    SCALE_UP_THRESHOLD = 50
-    SCALE_DOWN_THRESHOLD = 20
-    CHECK_INTERVAL = 10
-
-    log.info("transcription worker started", min_threads=MIN_THREADS, max_threads=MAX_THREADS)
+    log.info("transcription worker started", threads=num_threads)
 
     threads: list[Thread] = []
-    thread_count = 0
-
-    def _spawn(n: int, extra: bool = False) -> None:
-        nonlocal thread_count
-        for _ in range(n):
-            tid = thread_count
-            t = Thread(target=_worker_loop, args=(tid, extra), name=f"transcriber-{tid}", daemon=True)
-            t.start()
-            threads.append(t)
-            thread_count += 1
-
-    _spawn(MIN_THREADS)
+    for i in range(num_threads):
+        t = Thread(target=_worker_loop, args=(i,), name=f"transcriber-{i}", daemon=True)
+        t.start()
+        threads.append(t)
 
     while not stop.is_set():
-        stop.wait(CHECK_INTERVAL)
-        if stop.is_set():
-            break
-        alive = sum(1 for t in threads if t.is_alive())
-        depth = queue_depth(r, CAPTURE_QUEUE)
-        if depth > SCALE_UP_THRESHOLD and alive < MAX_THREADS:
-            add = min(2, MAX_THREADS - alive)
-            _spawn(add, extra=True)
-            log.info("scaled up transcribers", alive=alive + add, depth=depth)
-        elif depth < SCALE_DOWN_THRESHOLD and alive > MIN_THREADS:
-            log.info("backlog clear, extra threads will drain naturally", alive=alive, depth=depth)
+        stop.wait(30)
 
     for t in threads:
         t.join(timeout=10)
