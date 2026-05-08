@@ -192,6 +192,8 @@ class OpenMhzCaptureManager:
         self._stop = Event()
 
     def start(self) -> None:
+        from playwright.sync_api import Error as PlaywrightError
+
         systems = [s.strip() for s in self.config.systems.split(",") if s.strip()]
         if not systems:
             log.error("no openmhz systems configured")
@@ -207,6 +209,16 @@ class OpenMhzCaptureManager:
             try:
                 self._run_poll_loop(systems)
                 consecutive_failures = 0
+            except PlaywrightError as e:
+                consecutive_failures += 1
+                delay = min(30 * (2 ** min(consecutive_failures - 1, 5)), 600)
+                log.warning(
+                    "browser closed, restarting",
+                    failures=consecutive_failures,
+                    retry_in=delay,
+                    error=str(e).split("\n")[0],
+                )
+                self._stop.wait(delay)
             except Exception:
                 consecutive_failures += 1
                 delay = min(30 * (2 ** min(consecutive_failures - 1, 5)), 600)
