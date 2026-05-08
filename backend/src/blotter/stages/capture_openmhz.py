@@ -211,7 +211,7 @@ class OpenMhzCaptureManager:
                 consecutive_failures = 0
             except PlaywrightError as e:
                 consecutive_failures += 1
-                delay = min(30 * (2 ** min(consecutive_failures - 1, 5)), 600)
+                delay = min(15 * consecutive_failures, 120)
                 log.warning(
                     "browser closed, restarting",
                     failures=consecutive_failures,
@@ -221,7 +221,7 @@ class OpenMhzCaptureManager:
                 self._stop.wait(delay)
             except Exception:
                 consecutive_failures += 1
-                delay = min(30 * (2 ** min(consecutive_failures - 1, 5)), 600)
+                delay = min(15 * consecutive_failures, 120)
                 log.warning(
                     "browser poll loop failed, restarting",
                     failures=consecutive_failures,
@@ -294,10 +294,8 @@ class OpenMhzCaptureManager:
             page.set_default_timeout(15000)
 
             if not self._solve_challenge(page):
-                # Hard-blocked — long backoff, don't spam Cloudflare
-                log.error("hard-blocked, backing off 30 min")
+                log.warning("initial challenge failed, will retry with fresh browser")
                 browser.close()
-                self._stop.wait(1800)
                 return
 
             last_times: dict[str, int] = {s: int(time.time() * 1000) for s in systems}
@@ -320,10 +318,8 @@ class OpenMhzCaptureManager:
             wd.start()
 
             log.info("polling started", systems=systems)
-            consecutive_challenges = 0
 
             while not self._stop.is_set():
-                challenge_hit = False
                 for system in systems:
                     if self._stop.is_set():
                         break
@@ -346,39 +342,15 @@ class OpenMhzCaptureManager:
                         except json.JSONDecodeError:
                             kind = _classify_response(result)
 
-                            if kind == "blocked":
-                                log.error("ip hard-blocked mid-session, backing off 30 min")
-                                browser.close()
-                                self._stop.wait(1800)
-                                return
-
-                            if kind == "challenge":
-                                consecutive_challenges += 1
-                                if consecutive_challenges >= 5:
-                                    log.error("5 consecutive challenges, recycling browser")
-                                    browser.close()
-                                    self._stop.wait(300)
-                                    return
-
-                                backoff = min(60 * (2 ** min(consecutive_challenges - 1, 3)), 600)
+                            if kind in ("blocked", "challenge"):
                                 log.warning(
-                                    "cloudflare challenge detected",
-                                    attempt=consecutive_challenges,
-                                    backoff=backoff,
+                                    "cloudflare challenge, recycling browser",
+                                    kind=kind,
+                                    system=system,
                                 )
-                                solved = self._solve_challenge(page)
-                                self._last_poll = time.monotonic()
-                                if not solved:
-                                    log.error("challenge solve failed, recycling browser")
-                                    browser.close()
-                                    self._stop.wait(1800)
-                                    return
-                                self._stop.wait(backoff)
-                                challenge_hit = True
-                                break
+                                browser.close()
+                                return
                             continue
-
-                        consecutive_challenges = 0
 
                         if "error" in data:
                             log.warning("fetch error", system=system, error=data["error"])
@@ -423,8 +395,7 @@ class OpenMhzCaptureManager:
                     except Exception:
                         log.warning("poll cycle failed", system=system, exc_info=True)
 
-                if not challenge_hit:
-                    self._stop.wait(self.config.poll_interval)
+                self._stop.wait(self.config.poll_interval)
 
             executor.shutdown(wait=True, cancel_futures=True)
             browser.close()
