@@ -204,31 +204,35 @@ class OpenMhzCaptureManager:
 
         log.info("openmhz capture manager starting", systems=len(systems))
         consecutive_failures = 0
+        executor = ThreadPoolExecutor(max_workers=32)
 
-        while not self._stop.is_set():
-            try:
-                self._run_poll_loop(systems)
-                consecutive_failures = 0
-            except PlaywrightError as e:
-                consecutive_failures += 1
-                delay = min(15 * consecutive_failures, 120)
-                log.warning(
-                    "browser closed, restarting",
-                    failures=consecutive_failures,
-                    retry_in=delay,
-                    error=str(e).split("\n")[0],
-                )
-                self._stop.wait(delay)
-            except Exception:
-                consecutive_failures += 1
-                delay = min(15 * consecutive_failures, 120)
-                log.warning(
-                    "browser poll loop failed, restarting",
-                    failures=consecutive_failures,
-                    retry_in=delay,
-                    exc_info=True,
-                )
-                self._stop.wait(delay)
+        try:
+            while not self._stop.is_set():
+                try:
+                    self._run_poll_loop(systems, executor)
+                    consecutive_failures = 0
+                except PlaywrightError as e:
+                    consecutive_failures += 1
+                    delay = min(15 * consecutive_failures, 120)
+                    log.warning(
+                        "browser closed, restarting",
+                        failures=consecutive_failures,
+                        retry_in=delay,
+                        error=str(e).split("\n")[0],
+                    )
+                    self._stop.wait(delay)
+                except Exception:
+                    consecutive_failures += 1
+                    delay = min(15 * consecutive_failures, 120)
+                    log.warning(
+                        "browser poll loop failed, restarting",
+                        failures=consecutive_failures,
+                        retry_in=delay,
+                        exc_info=True,
+                    )
+                    self._stop.wait(delay)
+        finally:
+            executor.shutdown(wait=True, cancel_futures=True)
 
         log.info("openmhz capture manager stopped")
 
@@ -265,7 +269,7 @@ class OpenMhzCaptureManager:
         log.error("cloudflare challenge not solved after retries")
         return False
 
-    def _run_poll_loop(self, systems: list[str]) -> None:
+    def _run_poll_loop(self, systems: list[str], executor: ThreadPoolExecutor) -> None:
         from threading import Thread
         from playwright.sync_api import Error as PlaywrightError, sync_playwright
         from playwright_stealth import Stealth
@@ -300,7 +304,6 @@ class OpenMhzCaptureManager:
 
             last_times: dict[str, int] = {s: int(time.time() * 1000) for s in systems}
             chunk_index = 0
-            executor = ThreadPoolExecutor(max_workers=32)
             self._last_poll = time.monotonic()
 
             def _watchdog() -> None:
@@ -397,5 +400,4 @@ class OpenMhzCaptureManager:
 
                 self._stop.wait(self.config.poll_interval)
 
-            executor.shutdown(wait=True, cancel_futures=True)
             browser.close()
