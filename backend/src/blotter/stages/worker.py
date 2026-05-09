@@ -274,7 +274,7 @@ def run_processor(
 
                 processed += 1
                 if processed % 50 == 0:
-                    gc.collect(1)
+                    gc.collect()
                     if _proc_malloc_trim:
                         _proc_malloc_trim(0)
                     tc = threading.active_count()
