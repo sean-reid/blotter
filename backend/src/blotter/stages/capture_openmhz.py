@@ -189,11 +189,7 @@ class OpenMhzCaptureManager:
 
     def start(self) -> None:
         import ctypes
-        import tracemalloc
         from playwright.sync_api import Error as PlaywrightError
-
-        tracemalloc.start(10)
-        self._tm_snapshot = tracemalloc.take_snapshot()
 
         systems = [s.strip() for s in self.config.systems.split(",") if s.strip()]
         if not systems:
@@ -291,13 +287,6 @@ class OpenMhzCaptureManager:
                 gc.collect()
                 if self._malloc_trim:
                     self._malloc_trim(0)
-            if self._call_count % 200 == 0:
-                import tracemalloc
-                snap = tracemalloc.take_snapshot()
-                diff = snap.compare_to(self._tm_snapshot, "lineno")
-                top = [(str(s.traceback), s.size_diff, s.count_diff) for s in diff[:10]]
-                log.warning("mem_diff", calls=self._call_count, top=top)
-                self._tm_snapshot = snap
         executor.submit(_wrapped)
 
     def _run_poll_loop(self, systems: list[str], executor: ThreadPoolExecutor, http_client: httpx.Client) -> None:
