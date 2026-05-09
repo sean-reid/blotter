@@ -226,9 +226,7 @@ def run_processor(
 ) -> None:
     import ctypes
     import gc
-    import sys
     import threading
-    import traceback
     from threading import Lock, Thread
 
     r = get_redis(redis_config)
@@ -250,25 +248,10 @@ def run_processor(
     _recent_events: set[str] = set()
     _recent_lock = Lock()
 
-    def _dump_threads(*_):
-        frames = sys._current_frames()
-        lines = [f"\n=== Thread dump ({len(frames)} threads) ==="]
-        by_name: dict[str, list[int]] = {}
-        for tid, frame in frames.items():
-            t = next((t for t in threading.enumerate() if t.ident == tid), None)
-            name = t.name if t else f"unknown-{tid}"
-            tb = "".join(traceback.format_stack(frame))
-            by_name.setdefault(name, []).append(tid)
-            lines.append(f"\n--- Thread {tid} ({name}) ---\n{tb}")
-        lines.append(f"\nThread name counts: { {k: len(v) for k, v in sorted(by_name.items())} }")
-        dump = "\n".join(lines)
-        log.warning("thread_dump", dump=dump)
-        with open("/tmp/thread_dump.txt", "w") as f:
-            f.write(dump)
-
-    signal.signal(signal.SIGUSR1, _dump_threads)
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
+
+    log.info("processor init complete", threads=threading.active_count())
 
     def _claim_event(name: str, ts_epoch: float) -> bool:
         key = f"{name.lower()}|{int(ts_epoch // 600)}"
@@ -296,6 +279,12 @@ def run_processor(
                     gc.collect(1)
                     if _proc_malloc_trim:
                         _proc_malloc_trim(0)
+                    tc = threading.active_count()
+                    if tc > 10:
+                        names: dict[str, int] = {}
+                        for t in threading.enumerate():
+                            names[t.name] = names.get(t.name, 0) + 1
+                        log.warning("thread_audit", count=tc, names=names)
 
                 try:
                     if task.window_id:
