@@ -124,6 +124,7 @@ def _process_call(
             resp = client.get(audio_url, timeout=10, follow_redirects=True)
             resp.raise_for_status()
             m4a_path.write_bytes(resp.content)
+            resp.close()
         except Exception:
             log.debug("audio download failed", system=system, tg=tg_num)
             return
@@ -283,7 +284,7 @@ class OpenMhzCaptureManager:
             _process_call(call, system, self.gcs, self.redis, chunk_index, http_client)
             self._call_count += 1
             if self._call_count % 50 == 0:
-                gc.collect(1)
+                gc.collect()
                 if self._malloc_trim:
                     self._malloc_trim(0)
         executor.submit(_wrapped)
