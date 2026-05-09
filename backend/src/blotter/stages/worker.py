@@ -81,6 +81,10 @@ def run_transcriber(
     transcriber = StreamTranscriber(transcription_config, stream_config, gcs_config)
     _ = transcriber._transcriber.model
 
+    import faster_whisper.vad as _vad_mod
+    _cached_vad = _vad_mod.get_vad_model()
+    _vad_mod.get_vad_model = lambda: _cached_vad
+
     stop = Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
