@@ -287,11 +287,18 @@ def run_processor(
                         log.warning("thread_audit", count=tc, names=names)
 
                 try:
+                    _trace = processed <= 3
+                    if _trace:
+                        log.warning("trace_threads", step="dequeue", n=processed, tc=threading.active_count())
+
                     if task.window_id:
                         surrounding = fetch_window_transcripts(conn, task.window_id)
                     else:
                         surrounding = fetch_surrounding_context(conn, task.feed_id, str(task.chunk_ts))
                     context_text = surrounding if surrounding else task.full_text
+
+                    if _trace:
+                        log.warning("trace_threads", step="db_fetch", n=processed, tc=threading.active_count())
 
                     if len(context_text) < 30:
                         continue
@@ -299,12 +306,17 @@ def run_processor(
                     tags = extract_codes(context_text, feed_id=task.feed_id) if surrounding else task.tags
 
                     entities = extract_entities(context_text, nlp_config, feed_id=task.feed_id)
+                    if _trace:
+                        log.warning("trace_threads", step="nlp", n=processed, tc=threading.active_count())
+
                     if not entities:
                         entities = extract_clauses(context_text)
 
                     summary = ""
                     if summarizer and len(context_text) > 100:
                         summary = summarizer.summarize(context_text) or ""
+                        if _trace:
+                            log.warning("trace_threads", step="summarize", n=processed, tc=threading.active_count())
 
                     events = []
                     batch_coords: list[tuple[float, float]] = []
