@@ -43,12 +43,30 @@ class LocalStorageClient:
 
 
 class GCSClient:
+    _RECYCLE_INTERVAL = 200
+
     def __init__(self, config: GCSConfig) -> None:
+        self._config = config
+        self._call_count = 0
+        self._create_client()
+
+    def _create_client(self) -> None:
         from google.cloud import storage
-        self._client = storage.Client(project=config.project or None)
-        self._bucket = self._client.bucket(config.bucket)
+        self._client = storage.Client(project=self._config.project or None)
+        self._bucket = self._client.bucket(self._config.bucket)
+
+    def _maybe_recycle(self) -> None:
+        self._call_count += 1
+        if self._call_count % self._RECYCLE_INTERVAL == 0:
+            try:
+                self._client._http.close()
+            except Exception:
+                pass
+            self._create_client()
+            log.info("recycled gcs client", after_calls=self._call_count)
 
     def upload(self, local_path: Path, gcs_path: str) -> str:
+        self._maybe_recycle()
         blob = self._bucket.blob(gcs_path)
         blob.upload_from_filename(str(local_path), content_type="audio/wav")
         log.info("uploaded to gcs", path=gcs_path, size_mb=round(local_path.stat().st_size / 1e6, 1))
@@ -64,6 +82,7 @@ class GCSClient:
         return f"https://storage.googleapis.com/{self._bucket.name}/{gcs_path}"
 
     def signed_url(self, gcs_path: str, expiration_hours: int = 24) -> str:
+        self._maybe_recycle()
         blob = self._bucket.blob(gcs_path)
         return blob.generate_signed_url(
             expiration=timedelta(hours=expiration_hours),
