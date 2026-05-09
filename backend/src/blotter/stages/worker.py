@@ -378,6 +378,12 @@ def run_processor(
         t.start()
         threads.append(t)
 
+    time.sleep(5)
+    names: dict[str, int] = {}
+    for t in threading.enumerate():
+        names[t.name] = names.get(t.name, 0) + 1
+    log.warning("startup_threads", count=threading.active_count(), names=names)
+
     while not stop.is_set():
         stop.wait(10)
 
