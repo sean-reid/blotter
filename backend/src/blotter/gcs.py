@@ -10,6 +10,7 @@ from blotter.log import get_logger
 log = get_logger(__name__)
 
 _GCS_UPLOAD_URL = "https://storage.googleapis.com/upload/storage/v1/b/{bucket}/o"
+_GCS_OBJECT_URL = "https://storage.googleapis.com/storage/v1/b/{bucket}/o/{object}?alt=media"
 
 
 class LocalStorageClient:
@@ -78,9 +79,14 @@ class GCSClient:
         return f"gs://{self._bucket_name}/{gcs_path}"
 
     def download(self, gcs_path: str, local_path: Path) -> Path:
-        blob = self._signing_bucket.blob(gcs_path)
+        from urllib.parse import quote
         local_path.parent.mkdir(parents=True, exist_ok=True)
-        blob.download_to_filename(str(local_path))
+        resp = self._http.get(
+            _GCS_OBJECT_URL.format(bucket=self._bucket_name, object=quote(gcs_path, safe="")),
+            headers=self._auth_headers(),
+        )
+        resp.raise_for_status()
+        local_path.write_bytes(resp.content)
         return local_path
 
     def public_url(self, gcs_path: str) -> str:
@@ -94,12 +100,21 @@ class GCSClient:
         )
 
     def delete(self, gcs_path: str) -> None:
-        blob = self._signing_bucket.blob(gcs_path)
-        blob.delete()
+        from urllib.parse import quote
+        resp = self._http.delete(
+            f"https://storage.googleapis.com/storage/v1/b/{self._bucket_name}/o/{quote(gcs_path, safe='')}",
+            headers=self._auth_headers(),
+        )
+        resp.raise_for_status()
         log.info("deleted from gcs", path=gcs_path)
 
     def exists(self, gcs_path: str) -> bool:
-        return self._signing_bucket.blob(gcs_path).exists()
+        from urllib.parse import quote
+        resp = self._http.get(
+            f"https://storage.googleapis.com/storage/v1/b/{self._bucket_name}/o/{quote(gcs_path, safe='')}",
+            headers=self._auth_headers(),
+        )
+        return resp.status_code == 200
 
 
 def get_storage(config: GCSConfig) -> LocalStorageClient | GCSClient:
