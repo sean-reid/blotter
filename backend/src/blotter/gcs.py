@@ -2,10 +2,14 @@ import shutil
 from datetime import timedelta
 from pathlib import Path
 
+import httpx
+
 from blotter.config import GCSConfig
 from blotter.log import get_logger
 
 log = get_logger(__name__)
+
+_GCS_UPLOAD_URL = "https://storage.googleapis.com/upload/storage/v1/b/{bucket}/o"
 
 
 class LocalStorageClient:
@@ -43,59 +47,59 @@ class LocalStorageClient:
 
 
 class GCSClient:
-    _RECYCLE_INTERVAL = 200
-
     def __init__(self, config: GCSConfig) -> None:
-        self._config = config
-        self._call_count = 0
-        self._create_client()
-
-    def _create_client(self) -> None:
         from google.cloud import storage
-        self._client = storage.Client(project=self._config.project or None)
-        self._bucket = self._client.bucket(self._config.bucket)
 
-    def _maybe_recycle(self) -> None:
-        self._call_count += 1
-        if self._call_count % self._RECYCLE_INTERVAL == 0:
-            try:
-                self._client._http.close()
-            except Exception:
-                pass
-            self._create_client()
-            log.info("recycled gcs client", after_calls=self._call_count)
+        self._config = config
+        self._bucket_name = config.bucket
+
+        self._storage_client = storage.Client(project=config.project or None)
+        self._signing_bucket = self._storage_client.bucket(config.bucket)
+        self._credentials = self._storage_client._credentials
+
+        self._http = httpx.Client(timeout=30)
+
+    def _auth_headers(self) -> dict[str, str]:
+        if not self._credentials.valid:
+            from google.auth.transport.requests import Request
+            self._credentials.refresh(Request())
+        return {"Authorization": f"Bearer {self._credentials.token}"}
 
     def upload(self, local_path: Path, gcs_path: str) -> str:
-        self._maybe_recycle()
-        blob = self._bucket.blob(gcs_path)
-        blob.upload_from_filename(str(local_path), content_type="audio/wav")
-        log.info("uploaded to gcs", path=gcs_path, size_mb=round(local_path.stat().st_size / 1e6, 1))
-        return f"gs://{self._bucket.name}/{gcs_path}"
+        data = local_path.read_bytes()
+        resp = self._http.post(
+            _GCS_UPLOAD_URL.format(bucket=self._bucket_name),
+            params={"uploadType": "media", "name": gcs_path},
+            headers={**self._auth_headers(), "Content-Type": "audio/wav"},
+            content=data,
+        )
+        resp.raise_for_status()
+        log.info("uploaded to gcs", path=gcs_path, size_mb=round(len(data) / 1e6, 1))
+        return f"gs://{self._bucket_name}/{gcs_path}"
 
     def download(self, gcs_path: str, local_path: Path) -> Path:
-        blob = self._bucket.blob(gcs_path)
+        blob = self._signing_bucket.blob(gcs_path)
         local_path.parent.mkdir(parents=True, exist_ok=True)
         blob.download_to_filename(str(local_path))
         return local_path
 
     def public_url(self, gcs_path: str) -> str:
-        return f"https://storage.googleapis.com/{self._bucket.name}/{gcs_path}"
+        return f"https://storage.googleapis.com/{self._bucket_name}/{gcs_path}"
 
     def signed_url(self, gcs_path: str, expiration_hours: int = 24) -> str:
-        self._maybe_recycle()
-        blob = self._bucket.blob(gcs_path)
+        blob = self._signing_bucket.blob(gcs_path)
         return blob.generate_signed_url(
             expiration=timedelta(hours=expiration_hours),
             response_type="audio/wav",
         )
 
     def delete(self, gcs_path: str) -> None:
-        blob = self._bucket.blob(gcs_path)
+        blob = self._signing_bucket.blob(gcs_path)
         blob.delete()
         log.info("deleted from gcs", path=gcs_path)
 
     def exists(self, gcs_path: str) -> bool:
-        return self._bucket.blob(gcs_path).exists()
+        return self._signing_bucket.blob(gcs_path).exists()
 
 
 def get_storage(config: GCSConfig) -> LocalStorageClient | GCSClient:
