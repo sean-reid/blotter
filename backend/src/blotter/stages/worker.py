@@ -99,15 +99,24 @@ def run_transcriber(
     WINDOW_GAP_SECONDS = 60
     _last_seen: dict[str, tuple[float, str]] = {}
 
+    import ctypes
+    _libc = ctypes.CDLL("libc.so.6", use_errno=True)
+    _malloc_trim = _libc.malloc_trim
+
     def _worker_loop(thread_id: int) -> None:
         conn = _connect_postgres(pg_config, stop)
         log.info("transcription thread started", thread_id=thread_id)
+        processed = 0
 
         try:
             while not stop.is_set():
                 task = dequeue_chunk(r, timeout=5)
                 if task is None:
                     continue
+
+                processed += 1
+                if processed % 100 == 0:
+                    _malloc_trim(0)
 
                 try:
                     if transcript_exists(conn, task.feed_id, str(task.chunk_ts)):
@@ -247,78 +256,93 @@ def run_processor(
         conn = _connect_postgres(pg_config, stop)
         log.info("processor thread started", thread_id=thread_id)
 
-        while not stop.is_set():
-            task = dequeue_transcript(r, timeout=5)
-            if task is None:
-                continue
-
-            try:
-                if task.window_id:
-                    surrounding = fetch_window_transcripts(conn, task.window_id)
-                else:
-                    surrounding = fetch_surrounding_context(conn, task.feed_id, str(task.chunk_ts))
-                context_text = surrounding if surrounding else task.full_text
-
-                if len(context_text) < 30:
+        try:
+            while not stop.is_set():
+                task = dequeue_transcript(r, timeout=5)
+                if task is None:
                     continue
 
-                tags = extract_codes(context_text, feed_id=task.feed_id) if surrounding else task.tags
+                try:
+                    if task.window_id:
+                        surrounding = fetch_window_transcripts(conn, task.window_id)
+                    else:
+                        surrounding = fetch_surrounding_context(conn, task.feed_id, str(task.chunk_ts))
+                    context_text = surrounding if surrounding else task.full_text
 
-                entities = extract_entities(context_text, nlp_config, feed_id=task.feed_id)
-                if not entities:
-                    entities = extract_clauses(context_text)
+                    if len(context_text) < 30:
+                        continue
 
-                summary = ""
-                if summarizer and len(context_text) > 100:
-                    summary = summarizer.summarize(context_text) or ""
+                    tags = extract_codes(context_text, feed_id=task.feed_id) if surrounding else task.tags
 
-                events = []
-                batch_coords: list[tuple[float, float]] = []
-                for e in entities:
-                    result = geocoder.geocode(e, feed_name=task.feed_name, feed_id=task.feed_id)
-                    if result is None:
-                        continue
-                    lat, lon, name = result
-                    if not _claim_event(name, task.chunk_ts.timestamp()):
-                        log.debug("skipping cross-thread duplicate", normalized=name)
-                        continue
-                    if has_recent_event(conn, name, lat, lon, ref_ts=str(task.chunk_ts), minutes=10):
-                        log.debug("skipping duplicate event", normalized=name)
-                        continue
-                    too_close = any(
-                        abs(lat - blat) < 0.005 and abs(lon - blon) < 0.005
-                        for blat, blon in batch_coords
-                    )
-                    if too_close:
-                        log.debug("skipping batch duplicate", normalized=name)
-                        continue
-                    batch_coords.append((lat, lon))
-                    ctx = surrounding[:500] if surrounding else e.context
-                    events.append(GeocodedEvent(
+                    entities = extract_entities(context_text, nlp_config, feed_id=task.feed_id)
+                    if not entities:
+                        entities = extract_clauses(context_text)
+
+                    summary = ""
+                    if summarizer and len(context_text) > 100:
+                        summary = summarizer.summarize(context_text) or ""
+
+                    events = []
+                    batch_coords: list[tuple[float, float]] = []
+                    for e in entities:
+                        result = geocoder.geocode(e, feed_name=task.feed_name, feed_id=task.feed_id)
+                        if result is None:
+                            continue
+                        lat, lon, name = result
+                        if not _claim_event(name, task.chunk_ts.timestamp()):
+                            log.debug("skipping cross-thread duplicate", normalized=name)
+                            continue
+                        if has_recent_event(conn, name, lat, lon, ref_ts=str(task.chunk_ts), minutes=10):
+                            log.debug("skipping duplicate event", normalized=name)
+                            continue
+                        too_close = any(
+                            abs(lat - blat) < 0.005 and abs(lon - blon) < 0.005
+                            for blat, blon in batch_coords
+                        )
+                        if too_close:
+                            log.debug("skipping batch duplicate", normalized=name)
+                            continue
+                        batch_coords.append((lat, lon))
+                        ctx = surrounding[:500] if surrounding else e.context
+                        events.append(GeocodedEvent(
+                            feed_id=task.feed_id,
+                            archive_ts=task.chunk_ts,
+                            event_ts=task.chunk_ts,
+                            raw_location=e.raw_text,
+                            normalized=name,
+                            latitude=lat,
+                            longitude=lon,
+                            confidence=e.confidence,
+                            context=ctx,
+                            tags=tags,
+                            window_id=task.window_id,
+                            summary=summary,
+                        ))
+
+                    insert_events(conn, events)
+                    log.info(
+                        "chunk processed",
                         feed_id=task.feed_id,
-                        archive_ts=task.chunk_ts,
-                        event_ts=task.chunk_ts,
-                        raw_location=e.raw_text,
-                        normalized=name,
-                        latitude=lat,
-                        longitude=lon,
-                        confidence=e.confidence,
-                        context=ctx,
-                        tags=tags,
-                        window_id=task.window_id,
-                        summary=summary,
-                    ))
+                        entities=len(entities),
+                        events=len(events),
+                    )
 
-                insert_events(conn, events)
-                log.info(
-                    "chunk processed",
-                    feed_id=task.feed_id,
-                    entities=len(entities),
-                    events=len(events),
-                )
-
+                except Exception:
+                    log.error("processing failed", feed_id=task.feed_id, exc_info=True)
+                    try:
+                        conn.execute("SELECT 1")
+                    except Exception:
+                        log.warning("pg connection lost, reconnecting", thread_id=thread_id)
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        conn = _connect_postgres(pg_config, stop)
+        finally:
+            try:
+                conn.close()
             except Exception:
-                log.error("processing failed", feed_id=task.feed_id, exc_info=True)
+                pass
 
         log.info("processor thread stopped", thread_id=thread_id)
 

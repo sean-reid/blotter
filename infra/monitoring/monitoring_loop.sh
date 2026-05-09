@@ -17,25 +17,12 @@ while true; do
     bash "$DIR/check_services.sh" 2>/dev/null
   fi
 
-  # Every 5 min: heartbeat, disk, queues
+  # Every 5 min: heartbeat, disk, queues, memory
   if [ $((TICK % 5)) -eq 0 ]; then
     bash "$DIR/heartbeat.sh" 2>/dev/null
     bash "$DIR/check_disk.sh" 2>/dev/null
     bash "$DIR/check_queues.sh" 2>/dev/null
-
-    # Memory alert
-    NTFY_TOPIC=$(cat /workspace/blotter/.ntfy-secret 2>/dev/null)
-    TOTAL_KB=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
-    AVAIL_KB=$(awk '/MemAvailable/ {print $2}' /proc/meminfo)
-    PCT_USED=$((( TOTAL_KB - AVAIL_KB ) * 100 / TOTAL_KB))
-    AVAIL_GB=$((AVAIL_KB / 1024 / 1024))
-    TOTAL_GB=$((TOTAL_KB / 1024 / 1024))
-    if [ "$PCT_USED" -gt 80 ] && [ -n "$NTFY_TOPIC" ]; then
-      TOP=$(ps -eo rss,comm --no-headers | sort -nrk 1 | head -5 | awk '{printf "%s(%dMB) ", $2, $1/1024}')
-      curl -s -d "Memory at ${PCT_USED}% (${AVAIL_GB}GB/${TOTAL_GB}GB free). Top: ${TOP}" \
-        -H "Title: High memory usage" -H "Priority: high" -H "Tags: warning" \
-        "ntfy.sh/$NTFY_TOPIC" > /dev/null
-    fi
+    bash "$DIR/check_memory.sh" 2>/dev/null
   fi
 
   # Daily at ~16:00 UTC (9am PT)
