@@ -1,3 +1,4 @@
+import gc
 import json
 import signal
 import subprocess
@@ -211,6 +212,8 @@ class OpenMhzCaptureManager:
         except Exception:
             self._malloc_trim = None
 
+        self._call_count = 0
+
         log.info("openmhz capture manager starting", systems=len(systems))
         consecutive_failures = 0
         http_client = httpx.Client(timeout=10, follow_redirects=True)
@@ -282,6 +285,16 @@ class OpenMhzCaptureManager:
 
         log.error("cloudflare challenge not solved after retries")
         return False
+
+    def _submit_call(self, executor, call, system, http_client, chunk_index):
+        def _wrapped():
+            _process_call(call, system, self.gcs, self.redis, chunk_index, http_client)
+            self._call_count += 1
+            if self._call_count % 50 == 0:
+                gc.collect(1)
+                if self._malloc_trim:
+                    self._malloc_trim(0)
+        executor.submit(_wrapped)
 
     def _run_poll_loop(self, systems: list[str], executor: ThreadPoolExecutor, http_client: httpx.Client) -> None:
         from threading import Thread
@@ -393,10 +406,7 @@ class OpenMhzCaptureManager:
                             self.redis.expire(seen_key, 86400)
                             new_calls += 1
 
-                            executor.submit(
-                                _process_call, call, system, self.gcs, self.redis, chunk_index,
-                                http_client,
-                            )
+                            self._submit_call(executor, call, system, http_client, chunk_index)
                             chunk_index += 1
 
                             call_time = call.get("time")
