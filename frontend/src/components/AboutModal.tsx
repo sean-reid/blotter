@@ -74,7 +74,7 @@ export default function AboutModal({ open, onClose }: Props) {
 
         <div className="px-5 py-4 space-y-4 text-[13px] leading-relaxed text-[#adbac7]">
           <p>
-            Blotter monitors public safety radio across 20+ US metro areas,
+            Blotter monitors public safety radio across 21 US metro areas,
             transcribes dispatch audio in near real-time, extracts locations,
             and plots activity on a map.
           </p>
