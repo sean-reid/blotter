@@ -99,15 +99,24 @@ def run_transcriber(
     WINDOW_GAP_SECONDS = 60
     _last_seen: dict[str, tuple[float, str]] = {}
 
+    import ctypes
+    _libc = ctypes.CDLL("libc.so.6", use_errno=True)
+    _malloc_trim = _libc.malloc_trim
+
     def _worker_loop(thread_id: int) -> None:
         conn = _connect_postgres(pg_config, stop)
         log.info("transcription thread started", thread_id=thread_id)
+        processed = 0
 
         try:
             while not stop.is_set():
                 task = dequeue_chunk(r, timeout=5)
                 if task is None:
                     continue
+
+                processed += 1
+                if processed % 100 == 0:
+                    _malloc_trim(0)
 
                 try:
                     if transcript_exists(conn, task.feed_id, str(task.chunk_ts)):
