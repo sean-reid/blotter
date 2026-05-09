@@ -76,7 +76,10 @@ def run_transcriber(
     embedding_config: EmbeddingConfig | None = None,
     num_threads: int = 1,
 ) -> None:
+    import faulthandler
     from threading import Thread
+
+    faulthandler.register(signal.SIGUSR1, all_threads=True, chain=False)
 
     transcriber = StreamTranscriber(transcription_config, stream_config, gcs_config)
     _ = transcriber._transcriber.model
@@ -225,8 +228,11 @@ def run_processor(
     num_threads: int = 2,
 ) -> None:
     import ctypes
+    import faulthandler
     import gc
     from threading import Lock, Thread
+
+    faulthandler.register(signal.SIGUSR1, all_threads=True, chain=False)
 
     r = get_redis(redis_config)
     geocoder = Geocoder(geocoding_config, region_config)
