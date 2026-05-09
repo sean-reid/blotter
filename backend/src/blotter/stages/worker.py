@@ -76,10 +76,7 @@ def run_transcriber(
     embedding_config: EmbeddingConfig | None = None,
     num_threads: int = 1,
 ) -> None:
-    import faulthandler
     from threading import Thread
-
-    faulthandler.register(signal.SIGUSR1, all_threads=True, chain=False)
 
     transcriber = StreamTranscriber(transcription_config, stream_config, gcs_config)
     _ = transcriber._transcriber.model
@@ -228,11 +225,11 @@ def run_processor(
     num_threads: int = 2,
 ) -> None:
     import ctypes
-    import faulthandler
     import gc
+    import sys
+    import threading
+    import traceback
     from threading import Lock, Thread
-
-    faulthandler.register(signal.SIGUSR1, all_threads=True, chain=False)
 
     r = get_redis(redis_config)
     geocoder = Geocoder(geocoding_config, region_config)
@@ -253,6 +250,23 @@ def run_processor(
     _recent_events: set[str] = set()
     _recent_lock = Lock()
 
+    def _dump_threads(*_):
+        frames = sys._current_frames()
+        lines = [f"\n=== Thread dump ({len(frames)} threads) ==="]
+        by_name: dict[str, list[int]] = {}
+        for tid, frame in frames.items():
+            t = next((t for t in threading.enumerate() if t.ident == tid), None)
+            name = t.name if t else f"unknown-{tid}"
+            tb = "".join(traceback.format_stack(frame))
+            by_name.setdefault(name, []).append(tid)
+            lines.append(f"\n--- Thread {tid} ({name}) ---\n{tb}")
+        lines.append(f"\nThread name counts: { {k: len(v) for k, v in sorted(by_name.items())} }")
+        dump = "\n".join(lines)
+        log.warning("thread_dump", dump=dump)
+        with open("/tmp/thread_dump.txt", "w") as f:
+            f.write(dump)
+
+    signal.signal(signal.SIGUSR1, _dump_threads)
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
 
