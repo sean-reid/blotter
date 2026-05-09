@@ -90,7 +90,7 @@ def _process_call(
     gcs: GCSClient | LocalStorageClient,
     r: redis.Redis,
     chunk_index: int,
-    executor=None,
+    http_client: httpx.Client | None = None,
     attempt: int = 0,
 ) -> None:
     audio_url = call.get("url", "")
@@ -120,14 +120,16 @@ def _process_call(
         wav_path = tmpdir_path / "call.wav"
 
         try:
-            resp = httpx.get(audio_url, timeout=10, follow_redirects=True)
+            client = http_client or httpx
+            resp = client.get(audio_url, timeout=10, follow_redirects=True)
             resp.raise_for_status()
             m4a_path.write_bytes(resp.content)
         except Exception:
-            if attempt < 4 and executor is not None:
-                executor.submit(
-                    _process_call, call, system, gcs, r, chunk_index,
-                    executor, attempt + 1,
+            if attempt < 4:
+                time.sleep(1 + attempt)
+                _process_call(
+                    call, system, gcs, r, chunk_index,
+                    http_client, attempt + 1,
                 )
             elif attempt >= 4:
                 log.debug("audio download failed", system=system, tg=tg_num)
@@ -192,6 +194,7 @@ class OpenMhzCaptureManager:
         self._stop = Event()
 
     def start(self) -> None:
+        import ctypes
         from playwright.sync_api import Error as PlaywrightError
 
         systems = [s.strip() for s in self.config.systems.split(",") if s.strip()]
@@ -202,14 +205,21 @@ class OpenMhzCaptureManager:
         signal.signal(signal.SIGTERM, lambda *_: self._stop.set())
         signal.signal(signal.SIGINT, lambda *_: self._stop.set())
 
+        try:
+            _libc = ctypes.CDLL("libc.so.6", use_errno=True)
+            self._malloc_trim = _libc.malloc_trim
+        except Exception:
+            self._malloc_trim = None
+
         log.info("openmhz capture manager starting", systems=len(systems))
         consecutive_failures = 0
+        http_client = httpx.Client(timeout=10, follow_redirects=True)
         executor = ThreadPoolExecutor(max_workers=32)
 
         try:
             while not self._stop.is_set():
                 try:
-                    self._run_poll_loop(systems, executor)
+                    self._run_poll_loop(systems, executor, http_client)
                     consecutive_failures = 0
                 except PlaywrightError as e:
                     consecutive_failures += 1
@@ -231,7 +241,11 @@ class OpenMhzCaptureManager:
                         exc_info=True,
                     )
                     self._stop.wait(delay)
+                finally:
+                    if self._malloc_trim:
+                        self._malloc_trim(0)
         finally:
+            http_client.close()
             executor.shutdown(wait=True, cancel_futures=True)
 
         log.info("openmhz capture manager stopped")
@@ -269,10 +283,12 @@ class OpenMhzCaptureManager:
         log.error("cloudflare challenge not solved after retries")
         return False
 
-    def _run_poll_loop(self, systems: list[str], executor: ThreadPoolExecutor) -> None:
+    def _run_poll_loop(self, systems: list[str], executor: ThreadPoolExecutor, http_client: httpx.Client) -> None:
         from threading import Thread
         from playwright.sync_api import Error as PlaywrightError, sync_playwright
         from playwright_stealth import Stealth
+
+        BROWSER_RECYCLE_SECONDS = 1800
 
         stealth = Stealth()
 
@@ -305,6 +321,7 @@ class OpenMhzCaptureManager:
             last_times: dict[str, int] = {s: int(time.time() * 1000) for s in systems}
             chunk_index = 0
             self._last_poll = time.monotonic()
+            browser_start = time.monotonic()
 
             def _watchdog() -> None:
                 while not self._stop.is_set():
@@ -323,6 +340,11 @@ class OpenMhzCaptureManager:
             log.info("polling started", systems=systems)
 
             while not self._stop.is_set():
+                if time.monotonic() - browser_start > BROWSER_RECYCLE_SECONDS:
+                    log.info("recycling browser", uptime_min=round((time.monotonic() - browser_start) / 60))
+                    browser.close()
+                    return
+
                 for system in systems:
                     if self._stop.is_set():
                         break
@@ -373,7 +395,7 @@ class OpenMhzCaptureManager:
 
                             executor.submit(
                                 _process_call, call, system, self.gcs, self.redis, chunk_index,
-                                executor,
+                                http_client,
                             )
                             chunk_index += 1
 
