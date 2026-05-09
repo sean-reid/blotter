@@ -67,6 +67,7 @@ def stream_start(
 ) -> None:
     """Start real-time stream capture and processing."""
     import multiprocessing
+    import signal
 
     settings = get_settings()
     procs: list[multiprocessing.Process] = []
@@ -106,6 +107,17 @@ def stream_start(
         )
         procs.append(p)
 
+    def _shutdown(*_):
+        for p in procs:
+            p.terminate()
+        for p in procs:
+            p.join(timeout=10)
+            if p.is_alive():
+                p.kill()
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, _shutdown)
+
     for p in procs:
         p.start()
         log.info("started worker", name=p.name, pid=p.pid)
@@ -116,11 +128,7 @@ def stream_start(
         for p in procs:
             p.join()
     except KeyboardInterrupt:
-        typer.echo("\nStopping workers...")
-        for p in procs:
-            p.terminate()
-        for p in procs:
-            p.join(timeout=10)
+        _shutdown()
 
 
 @stream_app.command("status")
