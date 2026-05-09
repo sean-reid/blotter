@@ -224,10 +224,18 @@ def run_processor(
     ollama_config: OllamaConfig | None = None,
     num_threads: int = 2,
 ) -> None:
+    import ctypes
+    import gc
     from threading import Lock, Thread
 
     r = get_redis(redis_config)
     geocoder = Geocoder(geocoding_config, region_config)
+
+    try:
+        _libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        _proc_malloc_trim = _libc.malloc_trim
+    except Exception:
+        _proc_malloc_trim = None
 
     summarizer = None
     if ollama_config and ollama_config.enabled:
@@ -255,12 +263,19 @@ def run_processor(
     def _processor_loop(thread_id: int) -> None:
         conn = _connect_postgres(pg_config, stop)
         log.info("processor thread started", thread_id=thread_id)
+        processed = 0
 
         try:
             while not stop.is_set():
                 task = dequeue_transcript(r, timeout=5)
                 if task is None:
                     continue
+
+                processed += 1
+                if processed % 50 == 0:
+                    gc.collect(1)
+                    if _proc_malloc_trim:
+                        _proc_malloc_trim(0)
 
                 try:
                     if task.window_id:

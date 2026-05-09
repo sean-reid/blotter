@@ -292,15 +292,24 @@ def _get_context(text: str, mention: str, window: int = 120) -> str:
     return prefix + text[start:end].strip() + suffix
 
 
+_shared_client: httpx.Client | None = None
+
+
+def _get_client() -> httpx.Client:
+    global _shared_client
+    if _shared_client is None:
+        _shared_client = httpx.Client(timeout=15)
+    return _shared_client
+
+
 def _call_nlp(text: str, api_key: str) -> list[dict]:
-    resp = httpx.post(
+    resp = _get_client().post(
         "https://language.googleapis.com/v1/documents:analyzeEntities",
         params={"key": api_key},
         json={
             "document": {"type": "PLAIN_TEXT", "content": text},
             "encodingType": "UTF8",
         },
-        timeout=15,
     )
     resp.raise_for_status()
     return resp.json().get("entities", [])

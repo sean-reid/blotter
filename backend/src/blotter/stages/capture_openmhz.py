@@ -92,7 +92,6 @@ def _process_call(
     r: redis.Redis,
     chunk_index: int,
     http_client: httpx.Client | None = None,
-    attempt: int = 0,
 ) -> None:
     audio_url = call.get("url", "")
     tg_num = call.get("talkgroupNum", 0)
@@ -126,14 +125,7 @@ def _process_call(
             resp.raise_for_status()
             m4a_path.write_bytes(resp.content)
         except Exception:
-            if attempt < 4:
-                time.sleep(1 + attempt)
-                _process_call(
-                    call, system, gcs, r, chunk_index,
-                    http_client, attempt + 1,
-                )
-            elif attempt >= 4:
-                log.debug("audio download failed", system=system, tg=tg_num)
+            log.debug("audio download failed", system=system, tg=tg_num)
             return
 
         if not _convert_to_wav(m4a_path, wav_path):

@@ -258,6 +258,7 @@ class Geocoder:
         self.api_key = config.api_key
         self.region = region
         self._default_bbox = box(region.bbox_west, region.bbox_south, region.bbox_east, region.bbox_north)
+        self._client = httpx.Client(timeout=10)
 
     def _in_bounds(self, lat: float, lon: float, system_region: SystemRegion | None = None) -> bool:
         if system_region:
@@ -267,7 +268,7 @@ class Geocoder:
     @lru_cache(maxsize=4096)
     def _places_lookup(self, query: str, bias: str | None = None) -> PlaceResult | None:
         try:
-            resp = httpx.get(
+            resp = self._client.get(
                 "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
                 params={
                     "input": query,
@@ -276,7 +277,6 @@ class Geocoder:
                     "locationbias": bias or self.region.places_bias,
                     "key": self.api_key,
                 },
-                timeout=10,
             )
             resp.raise_for_status()
             data = resp.json()
