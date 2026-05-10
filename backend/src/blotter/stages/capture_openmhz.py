@@ -22,11 +22,6 @@ log = get_logger(__name__)
 
 TALKGROUP_NAMES: dict[str, dict[int, str]] = {}
 
-USER_AGENT = (
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-)
-
 
 def _talkgroup_label(system: str, tg_num: int) -> str:
     name = TALKGROUP_NAMES.get(system, {}).get(tg_num)
@@ -168,6 +163,7 @@ def _process_call(
 
 
 def _classify_response(text: str) -> str:
+    """Classify a non-JSON response: 'blocked', 'challenge', or 'unknown'."""
     lower = text[:1000].lower()
     if "you have been blocked" in lower or "attention required" in lower:
         return "blocked"
@@ -214,7 +210,7 @@ class OpenMhzCaptureManager:
 
         log.info("openmhz capture manager starting", systems=len(systems))
         consecutive_failures = 0
-        audio_client = httpx.Client(
+        http_client = httpx.Client(
             timeout=10,
             follow_redirects=True,
             limits=httpx.Limits(max_connections=50, max_keepalive_connections=10, keepalive_expiry=30),
@@ -224,13 +220,13 @@ class OpenMhzCaptureManager:
         try:
             while not self._stop.is_set():
                 try:
-                    self._run_poll_loop(systems, executor, audio_client)
+                    self._run_poll_loop(systems, executor, http_client)
                     consecutive_failures = 0
                 except PlaywrightError as e:
                     consecutive_failures += 1
                     delay = min(15 * consecutive_failures, 120)
                     log.warning(
-                        "challenge solve failed, retrying",
+                        "browser closed, restarting",
                         failures=consecutive_failures,
                         retry_in=delay,
                         error=str(e).split("\n")[0],
@@ -240,82 +236,55 @@ class OpenMhzCaptureManager:
                     consecutive_failures += 1
                     delay = min(15 * consecutive_failures, 120)
                     log.warning(
-                        "poll loop failed, restarting",
+                        "browser poll loop failed, restarting",
                         failures=consecutive_failures,
                         retry_in=delay,
                         exc_info=True,
                     )
                     self._stop.wait(delay)
                 finally:
-                    gc.collect()
                     if self._malloc_trim:
                         self._malloc_trim(0)
         finally:
-            audio_client.close()
+            http_client.close()
             executor.shutdown(wait=True, cancel_futures=True)
 
         log.info("openmhz capture manager stopped")
 
-    def _obtain_cookies(self) -> httpx.Cookies:
-        """Launch a temporary browser to solve the Cloudflare challenge."""
-        from playwright.sync_api import sync_playwright
-        from playwright_stealth import Stealth
+    def _solve_challenge(self, page) -> bool:
+        """Attempt to solve Cloudflare challenge. Returns True if solved."""
+        seed_url = f"{self.config.api_url}/lapdvalley/calls/newer?time=0"
+        log.info("solving cloudflare challenge", url=seed_url)
+        page.goto(seed_url, wait_until="networkidle", timeout=30000)
+        page.wait_for_timeout(3000)
 
-        stealth = Stealth()
-        cookies = httpx.Cookies()
+        for attempt in range(3):
+            title = page.title().lower()
+            body = page.content()[:1000].lower()
 
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-dev-shm-usage",
-                ],
-            )
+            if "blocked" in body or "attention required" in title:
+                log.error("ip is hard-blocked by cloudflare", attempt=attempt)
+                return False
+
+            if "moment" not in title and "challenge" not in title:
+                log.info("cloudflare challenge passed", attempt=attempt)
+                return True
+
+            log.warning("cloudflare challenge active", attempt=attempt, title=page.title())
+
             try:
-                ctx = browser.new_context(
-                    user_agent=USER_AGENT,
-                    viewport={"width": 1920, "height": 1080},
-                    locale="en-US",
-                )
-                page = ctx.new_page()
-                stealth.apply_stealth_sync(page)
-                page.set_default_timeout(15000)
+                cf_iframe = page.frame_locator("iframe[src*='challenge']").first
+                cf_iframe.locator("input[type='checkbox'], .cb-lb").click(timeout=5000)
+                log.info("clicked turnstile checkbox")
+            except Exception:
+                pass
 
-                seed_url = f"{self.config.api_url}/lapdvalley/calls/newer?time=0"
-                log.info("solving cloudflare challenge", url=seed_url)
-                page.goto(seed_url, wait_until="networkidle", timeout=30000)
-                page.wait_for_timeout(3000)
+            page.wait_for_timeout(10000 + attempt * 10000)
 
-                for attempt in range(3):
-                    title = page.title().lower()
-                    body = page.content()[:1000].lower()
+        log.error("cloudflare challenge not solved after retries")
+        return False
 
-                    if "blocked" in body or "attention required" in title:
-                        raise RuntimeError("IP is hard-blocked by Cloudflare")
-
-                    if "moment" not in title and "challenge" not in title:
-                        for c in ctx.cookies():
-                            cookies.set(c["name"], c["value"], domain=c.get("domain", ""))
-                        log.info("challenge solved", attempt=attempt, num_cookies=len(cookies))
-                        return cookies
-
-                    log.warning("cloudflare challenge active", attempt=attempt, title=page.title())
-                    try:
-                        cf_iframe = page.frame_locator("iframe[src*='challenge']").first
-                        cf_iframe.locator("input[type='checkbox'], .cb-lb").click(timeout=5000)
-                        log.info("clicked turnstile checkbox")
-                    except Exception:
-                        pass
-
-                    page.wait_for_timeout(10000 + attempt * 10000)
-
-                raise RuntimeError("Cloudflare challenge not solved after retries")
-            finally:
-                browser.close()
-
-    def _submit_call(self, executor, call, system, audio_client, chunk_index):
+    def _submit_call(self, executor, call, system, http_client, chunk_index):
         call_data = {
             "url": call.get("url", ""),
             "talkgroupNum": call.get("talkgroupNum", 0),
@@ -323,7 +292,7 @@ class OpenMhzCaptureManager:
             "time": call.get("time"),
         }
         def _wrapped():
-            _process_call(call_data, system, self.gcs, self.redis, chunk_index, audio_client)
+            _process_call(call_data, system, self.gcs, self.redis, chunk_index, http_client)
             self._call_count += 1
             if self._call_count % 50 == 0:
                 gc.collect()
@@ -334,53 +303,100 @@ class OpenMhzCaptureManager:
         if len(self._pending_futures) > 100:
             self._pending_futures = [f for f in self._pending_futures if not f.done()]
 
-    def _run_poll_loop(
-        self,
-        systems: list[str],
-        executor: ThreadPoolExecutor,
-        audio_client: httpx.Client,
-    ) -> None:
-        cookies = self._obtain_cookies()
+    def _run_poll_loop(self, systems: list[str], executor: ThreadPoolExecutor, http_client: httpx.Client) -> None:
+        from threading import Thread
+        from playwright.sync_api import Error as PlaywrightError, sync_playwright
+        from playwright_stealth import Stealth
 
-        api_client = httpx.Client(
-            timeout=15,
-            cookies=cookies,
-            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5, keepalive_expiry=30),
-        )
+        BROWSER_RECYCLE_SECONDS = 1800
 
-        last_times: dict[str, int] = {s: int(time.time() * 1000) for s in systems}
-        chunk_index = 0
-        polls_since_solve = 0
+        stealth = Stealth()
 
-        log.info("polling with cookies", systems=len(systems))
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-dev-shm-usage",
+                ],
+            )
+            ctx = browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+                ),
+                viewport={"width": 1920, "height": 1080},
+                locale="en-US",
+            )
+            page = ctx.new_page()
+            stealth.apply_stealth_sync(page)
+            page.set_default_timeout(15000)
 
-        try:
+            if not self._solve_challenge(page):
+                log.warning("initial challenge failed, will retry with fresh browser")
+                browser.close()
+                return
+
+            last_times: dict[str, int] = {s: int(time.time() * 1000) for s in systems}
+            chunk_index = 0
+            self._last_poll = time.monotonic()
+            browser_start = time.monotonic()
+
+            def _watchdog() -> None:
+                while not self._stop.is_set():
+                    time.sleep(15)
+                    if time.monotonic() - self._last_poll > 120:
+                        log.warning("poll loop stale for 2min, killing browser")
+                        try:
+                            browser.close()
+                        except Exception:
+                            pass
+                        return
+
+            wd = Thread(target=_watchdog, daemon=True, name="poll-watchdog")
+            wd.start()
+
+            PAGE_RECYCLE_POLLS = 250
+            poll_count = 0
+
+            log.info("polling started", systems=systems)
+
             while not self._stop.is_set():
+                if time.monotonic() - browser_start > BROWSER_RECYCLE_SECONDS:
+                    log.info("recycling browser", uptime_min=round((time.monotonic() - browser_start) / 60))
+                    browser.close()
+                    return
+
                 for system in systems:
                     if self._stop.is_set():
                         break
                     try:
                         api_url = f"{self.config.api_url}/{system}/calls/newer?time={last_times[system]}"
-                        resp = api_client.get(api_url)
+                        result = page.evaluate(
+                            """(url) => fetch(url, {
+                                credentials: "include",
+                                headers: { "Accept": "application/json" }
+                            }).then(r => r.text()).catch(e => JSON.stringify({error: e.message}))""",
+                            api_url,
+                        )
+                        self._last_poll = time.monotonic()
 
-                        if resp.status_code != 200:
-                            kind = _classify_response(resp.text)
-                            if kind in ("blocked", "challenge"):
-                                if polls_since_solve == 0:
-                                    raise RuntimeError("cookies rejected immediately — TLS fingerprint may be blocked")
-                                log.warning("cloudflare challenge, re-solving", system=system)
-                                return
+                        if not result:
                             continue
 
                         try:
-                            data = json.loads(resp.text)
+                            data = json.loads(result)
                         except json.JSONDecodeError:
-                            kind = _classify_response(resp.text)
+                            kind = _classify_response(result)
+
                             if kind in ("blocked", "challenge"):
-                                if polls_since_solve == 0:
-                                    raise RuntimeError("cookies rejected immediately — TLS fingerprint may be blocked")
-                                log.warning("cloudflare challenge in response, re-solving", system=system)
+                                log.warning(
+                                    "cloudflare challenge, recycling browser",
+                                    kind=kind,
+                                    system=system,
+                                )
+                                browser.close()
                                 return
                             continue
 
@@ -400,7 +416,7 @@ class OpenMhzCaptureManager:
                             self.redis.expire(seen_key, 86400)
                             new_calls += 1
 
-                            self._submit_call(executor, call, system, audio_client, chunk_index)
+                            self._submit_call(executor, call, system, http_client, chunk_index)
                             chunk_index += 1
 
                             call_time = call.get("time")
@@ -418,10 +434,23 @@ class OpenMhzCaptureManager:
                             seen_count = self.redis.scard(seen_key)
                             log.info("poll cycle", system=system, new_calls=new_calls, total_seen=seen_count)
 
+                    except PlaywrightError:
+                        log.warning("browser dead, restarting", system=system)
+                        raise
                     except Exception:
                         log.warning("poll cycle failed", system=system, exc_info=True)
 
-                polls_since_solve += 1
+                poll_count += 1
+                if poll_count % PAGE_RECYCLE_POLLS == 0:
+                    page.close()
+                    page = ctx.new_page()
+                    stealth.apply_stealth_sync(page)
+                    if not self._solve_challenge(page):
+                        log.warning("page recycle challenge failed, recycling browser")
+                        browser.close()
+                        return
+                    log.info("recycled page", poll_count=poll_count)
+
                 self._stop.wait(self.config.poll_interval)
-        finally:
-            api_client.close()
+
+            browser.close()
