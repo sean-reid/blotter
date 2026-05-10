@@ -206,10 +206,15 @@ class OpenMhzCaptureManager:
             self._malloc_trim = None
 
         self._call_count = 0
+        self._pending_futures: list = []
 
         log.info("openmhz capture manager starting", systems=len(systems))
         consecutive_failures = 0
-        http_client = httpx.Client(timeout=10, follow_redirects=True)
+        http_client = httpx.Client(
+            timeout=10,
+            follow_redirects=True,
+            limits=httpx.Limits(max_connections=50, max_keepalive_connections=10, keepalive_expiry=30),
+        )
         executor = ThreadPoolExecutor(max_workers=32)
 
         try:
@@ -280,14 +285,23 @@ class OpenMhzCaptureManager:
         return False
 
     def _submit_call(self, executor, call, system, http_client, chunk_index):
+        call_data = {
+            "url": call.get("url", ""),
+            "talkgroupNum": call.get("talkgroupNum", 0),
+            "len": call.get("len", 0),
+            "time": call.get("time"),
+        }
         def _wrapped():
-            _process_call(call, system, self.gcs, self.redis, chunk_index, http_client)
+            _process_call(call_data, system, self.gcs, self.redis, chunk_index, http_client)
             self._call_count += 1
             if self._call_count % 50 == 0:
                 gc.collect()
                 if self._malloc_trim:
                     self._malloc_trim(0)
-        executor.submit(_wrapped)
+        fut = executor.submit(_wrapped)
+        self._pending_futures.append(fut)
+        if len(self._pending_futures) > 100:
+            self._pending_futures = [f for f in self._pending_futures if not f.done()]
 
     def _run_poll_loop(self, systems: list[str], executor: ThreadPoolExecutor, http_client: httpx.Client) -> None:
         from threading import Thread
@@ -342,6 +356,9 @@ class OpenMhzCaptureManager:
 
             wd = Thread(target=_watchdog, daemon=True, name="poll-watchdog")
             wd.start()
+
+            PAGE_RECYCLE_POLLS = 250
+            poll_count = 0
 
             log.info("polling started", systems=systems)
 
@@ -422,6 +439,17 @@ class OpenMhzCaptureManager:
                         raise
                     except Exception:
                         log.warning("poll cycle failed", system=system, exc_info=True)
+
+                poll_count += 1
+                if poll_count % PAGE_RECYCLE_POLLS == 0:
+                    page.close()
+                    page = ctx.new_page()
+                    stealth.apply_stealth_sync(page)
+                    if not self._solve_challenge(page):
+                        log.warning("page recycle challenge failed, recycling browser")
+                        browser.close()
+                        return
+                    log.info("recycled page", poll_count=poll_count)
 
                 self._stop.wait(self.config.poll_interval)
 

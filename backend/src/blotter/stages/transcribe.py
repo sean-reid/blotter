@@ -88,6 +88,7 @@ class Transcriber:
                 text=seg.text.strip(),
             ))
             texts.append(seg.text.strip())
+        del segments_iter
 
         full_text = " ".join(texts)
         log.info(
