@@ -1,3 +1,4 @@
+import collections
 import signal
 import time
 from threading import Event
@@ -97,7 +98,7 @@ def run_transcriber(
     r = get_redis(redis_config)
 
     WINDOW_GAP_SECONDS = 60
-    _last_seen: dict[str, tuple[float, str]] = {}
+    _last_seen: collections.OrderedDict[str, tuple[float, str]] = collections.OrderedDict()
 
     import ctypes
     _libc = ctypes.CDLL("libc.so.6", use_errno=True)
@@ -142,6 +143,9 @@ def run_transcriber(
                     else:
                         window_id = f"{task.feed_id}_{task.chunk_ts.strftime('%Y%m%dT%H%M%S')}"
                     _last_seen[task.feed_id] = (chunk_epoch, window_id)
+                    _last_seen.move_to_end(task.feed_id)
+                    while len(_last_seen) > 512:
+                        _last_seen.popitem(last=False)
 
                     embedding: list[float] = []
                     if embedder:
