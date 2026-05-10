@@ -60,10 +60,12 @@ class GCSClient:
 
         self._http = httpx.Client(timeout=30)
 
+        from google.auth.transport.requests import Request
+        self._auth_request = Request()
+
     def _auth_headers(self) -> dict[str, str]:
         if not self._credentials.valid:
-            from google.auth.transport.requests import Request
-            self._credentials.refresh(Request())
+            self._credentials.refresh(self._auth_request)
         return {"Authorization": f"Bearer {self._credentials.token}"}
 
     def upload(self, local_path: Path, gcs_path: str) -> str:

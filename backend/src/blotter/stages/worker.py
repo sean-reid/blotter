@@ -1,4 +1,5 @@
 import collections
+import gc
 import signal
 import time
 from threading import Event
@@ -107,6 +108,7 @@ def run_transcriber(
 
                 processed += 1
                 if processed % 100 == 0:
+                    gc.collect()
                     _malloc_trim(0)
 
                 try:
@@ -219,7 +221,6 @@ def run_processor(
     num_threads: int = 2,
 ) -> None:
     import ctypes
-    import gc
     import threading
     from threading import Lock, Thread
 
@@ -239,7 +240,7 @@ def run_processor(
         log.info("ollama summarizer enabled", model=ollama_config.model)
 
     stop = Event()
-    _recent_events: set[str] = set()
+    _recent_events: collections.OrderedDict[str, None] = collections.OrderedDict()
     _recent_lock = Lock()
 
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
@@ -249,10 +250,11 @@ def run_processor(
         key = f"{name.lower()}|{int(ts_epoch // 600)}"
         with _recent_lock:
             if key in _recent_events:
+                _recent_events.move_to_end(key)
                 return False
-            _recent_events.add(key)
-            if len(_recent_events) > 5000:
-                _recent_events.clear()
+            _recent_events[key] = None
+            while len(_recent_events) > 5000:
+                _recent_events.popitem(last=False)
             return True
 
     def _processor_loop(thread_id: int) -> None:
