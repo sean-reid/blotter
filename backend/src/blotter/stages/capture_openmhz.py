@@ -1,5 +1,6 @@
 import gc
 import json
+import os
 import signal
 import subprocess
 import tempfile
@@ -19,6 +20,7 @@ from blotter.models import ChunkTask
 from blotter.queue import enqueue_chunk
 
 log = get_logger(__name__)
+_NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "")
 
 TALKGROUP_NAMES: dict[str, dict[int, str]] = {}
 
@@ -304,6 +306,15 @@ class OpenMhzCaptureManager:
                                 "curl_cffi TLS fingerprint rejected 3 times, stopping "
                                 "to avoid IP ban — manual intervention required",
                             )
+                            if _NTFY_TOPIC:
+                                try:
+                                    httpx.post(
+                                        f"https://ntfy.sh/{_NTFY_TOPIC}",
+                                        headers={"Title": "Capture: TLS rejected", "Priority": "urgent", "Tags": "rotating_light"},
+                                        content="curl_cffi TLS fingerprint rejected 3x. Pipeline stopped to avoid IP ban.",
+                                    )
+                                except Exception:
+                                    pass
                             self._stop.set()
                             break
                         delay = 60 * tls_rejections
