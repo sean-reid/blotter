@@ -19,7 +19,6 @@ from blotter.queue import (
     dequeue_chunk, dequeue_transcript, enqueue_transcript, get_redis,
     queue_depth, CAPTURE_QUEUE,
 )
-from blotter.stages.capture import CaptureManager
 from blotter.stages.capture_openmhz import OpenMhzCaptureManager
 from blotter.stages.extract import extract_clauses
 from blotter.stages.extract_codes import extract_codes
@@ -48,15 +47,6 @@ def _connect_postgres(pg_config: PostgresConfig, stop: Event | None = None, dela
                 stop.wait(delay)
             else:
                 time.sleep(delay)
-
-
-def run_capture(
-    stream_config: StreamConfig,
-    gcs_config: GCSConfig,
-    redis_config: RedisConfig,
-) -> None:
-    manager = CaptureManager(stream_config, gcs_config, redis_config)
-    manager.start()
 
 
 def run_capture_openmhz(

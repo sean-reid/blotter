@@ -13,7 +13,7 @@ AD_KEYWORDS = [
     "motorcycle insurer", "for insurance only",
     "lumberjack special", "lumberjack", "riding hoodies",
     "cousin canceled", "beat me there", "we can share",
-    "broadcastify", "scanner", "premium", "listeners",
+    "scanner", "premium", "listeners",
     "personal injury", "injury lawyer", "injury attorney",
     "attorney", "lawyer", "law firm", "law office",
     "building evidence", "client's pain", "settling low",
