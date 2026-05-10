@@ -1,3 +1,4 @@
+import collections
 import signal
 import time
 from threading import Event
@@ -18,7 +19,6 @@ from blotter.queue import (
     dequeue_chunk, dequeue_transcript, enqueue_transcript, get_redis,
     queue_depth, CAPTURE_QUEUE,
 )
-from blotter.stages.capture import CaptureManager
 from blotter.stages.capture_openmhz import OpenMhzCaptureManager
 from blotter.stages.extract import extract_clauses
 from blotter.stages.extract_codes import extract_codes
@@ -47,15 +47,6 @@ def _connect_postgres(pg_config: PostgresConfig, stop: Event | None = None, dela
                 stop.wait(delay)
             else:
                 time.sleep(delay)
-
-
-def run_capture(
-    stream_config: StreamConfig,
-    gcs_config: GCSConfig,
-    redis_config: RedisConfig,
-) -> None:
-    manager = CaptureManager(stream_config, gcs_config, redis_config)
-    manager.start()
 
 
 def run_capture_openmhz(
@@ -97,7 +88,7 @@ def run_transcriber(
     r = get_redis(redis_config)
 
     WINDOW_GAP_SECONDS = 60
-    _last_seen: dict[str, tuple[float, str]] = {}
+    _last_seen: collections.OrderedDict[str, tuple[float, str]] = collections.OrderedDict()
 
     import ctypes
     _libc = ctypes.CDLL("libc.so.6", use_errno=True)
@@ -142,6 +133,9 @@ def run_transcriber(
                     else:
                         window_id = f"{task.feed_id}_{task.chunk_ts.strftime('%Y%m%dT%H%M%S')}"
                     _last_seen[task.feed_id] = (chunk_epoch, window_id)
+                    _last_seen.move_to_end(task.feed_id)
+                    while len(_last_seen) > 512:
+                        _last_seen.popitem(last=False)
 
                     embedding: list[float] = []
                     if embedder:

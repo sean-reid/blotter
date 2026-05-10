@@ -26,8 +26,9 @@ class StreamTranscriber:
         self._transcriber = Transcriber(transcription_config)
         self._stream_config = stream_config
         self._gcs = get_storage(gcs_config)
-        self._prev_text: dict[str, str] = {}
-        self._text_buffer: dict[str, collections.deque[str]] = {}
+        self._prev_text: collections.OrderedDict[str, str] = collections.OrderedDict()
+        self._text_buffer: collections.OrderedDict[str, collections.deque[str]] = collections.OrderedDict()
+        self._max_feeds = 256
 
     def _get_buffer(self, feed_id: str) -> collections.deque[str]:
         if feed_id not in self._text_buffer:
@@ -57,9 +58,15 @@ class StreamTranscriber:
             full_text = strip_ads(full_text)
             full_text = self._deduplicate_boundary(task.feed_id, full_text)
             self._prev_text[task.feed_id] = full_text
+            self._prev_text.move_to_end(task.feed_id)
+            while len(self._prev_text) > self._max_feeds:
+                self._prev_text.popitem(last=False)
 
         if full_text:
             self._get_buffer(task.feed_id).append(full_text)
+            self._text_buffer.move_to_end(task.feed_id)
+            while len(self._text_buffer) > self._max_feeds:
+                self._text_buffer.popitem(last=False)
 
         log.info(
             "chunk transcribed",

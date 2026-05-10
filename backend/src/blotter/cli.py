@@ -63,7 +63,6 @@ def stream_start(
     transcribe_worker: bool = typer.Option(True, "--transcribe", help="Run transcription worker"),
     transcriber_workers: int = typer.Option(1, "--transcriber-workers", help="Number of transcription workers"),
     process: bool = typer.Option(True, help="Run processing worker"),
-    openmhz: bool = typer.Option(False, "--openmhz", help="Use OpenMHz instead of Broadcastify"),
 ) -> None:
     """Start real-time stream capture and processing."""
     import multiprocessing
@@ -73,20 +72,12 @@ def stream_start(
     procs: list[multiprocessing.Process] = []
 
     if capture:
-        if openmhz:
-            from blotter.stages.worker import run_capture_openmhz
-            p = multiprocessing.Process(
-                target=run_capture_openmhz,
-                args=(settings.openmhz, settings.gcs, settings.redis),
-                name="capture",
-            )
-        else:
-            from blotter.stages.worker import run_capture
-            p = multiprocessing.Process(
-                target=run_capture,
-                args=(settings.stream, settings.gcs, settings.redis),
-                name="capture",
-            )
+        from blotter.stages.worker import run_capture_openmhz
+        p = multiprocessing.Process(
+            target=run_capture_openmhz,
+            args=(settings.openmhz, settings.gcs, settings.redis),
+            name="capture",
+        )
         procs.append(p)
 
     if transcribe_worker:
@@ -148,10 +139,10 @@ def stream_status() -> None:
     typer.echo(f"Capture queue depth: {queue_depth(r, CAPTURE_QUEUE)}")
     typer.echo(f"Transcript queue depth: {queue_depth(r, TRANSCRIPT_QUEUE)}")
 
-    feeds = settings.stream.get_feeds()
-    typer.echo(f"\nConfigured feeds ({len(feeds)}):")
-    for fid, name in feeds.items():
-        typer.echo(f"  {fid}: {name}")
+    systems = [s.strip() for s in settings.openmhz.systems.split(",") if s.strip()]
+    typer.echo(f"\nConfigured OpenMHz systems ({len(systems)}):")
+    for sys_name in systems:
+        typer.echo(f"  {sys_name}")
 
 
 if __name__ == "__main__":
