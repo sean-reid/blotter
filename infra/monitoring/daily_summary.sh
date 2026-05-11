@@ -5,7 +5,7 @@ NTFY_TOPIC=$(cat /workspace/blotter/.ntfy-secret 2>/dev/null)
 [ -f /workspace/blotter/.env.secrets ] && set -a && source /workspace/blotter/.env.secrets && set +a
 
 export PGPASSWORD="${POSTGRES_PASSWORD:-}"
-PG="psql -U blotter -d blotter -tAc"
+PG="psql -h localhost -U blotter -d blotter -tAc"
 
 EVENTS=$($PG "SELECT count(*) FROM scanner_events WHERE created_at > now() - interval '24 hours'" 2>/dev/null || echo "?")
 TRANSCRIPTS=$($PG "SELECT count(*) FROM scanner_transcripts WHERE created_at > now() - interval '24 hours'" 2>/dev/null || echo "?")
