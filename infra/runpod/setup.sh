@@ -16,7 +16,7 @@ echo "=== Blotter RunPod Start ==="
 
 # Install system dependencies
 apt-get update -qq
-apt-get install -y -qq ffmpeg redis-server curl git gnupg lsb-release > /dev/null 2>&1
+apt-get install -y -qq ffmpeg redis-server curl git gnupg lsb-release zstd > /dev/null 2>&1
 if ! dpkg -l postgresql-16 &>/dev/null; then
   curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg
   echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
