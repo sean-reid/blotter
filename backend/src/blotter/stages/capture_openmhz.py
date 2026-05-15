@@ -195,7 +195,8 @@ class OpenMhzCaptureManager:
         from playwright.sync_api import sync_playwright
         from playwright_stealth import Stealth
 
-        seed_url = f"{self.config.api_url}/lapdvalley/calls/newer?time=0"
+        seed_time = int(time.time() * 1000)
+        seed_url = f"{self.config.api_url}/lapdvalley/calls/newer?time={seed_time}"
         log.info("obtaining cloudflare cookies", url=seed_url)
 
         with sync_playwright() as p:
@@ -399,13 +400,16 @@ class OpenMhzCaptureManager:
                         resp = session.get(api_url, timeout=10)
 
                         if resp.status_code == 403:
-                            if polls_since_cookies == 0:
-                                log.error(
-                                    "403 on first poll — TLS fingerprint may be rejected",
-                                    system=system,
-                                )
+                            kind = _classify_response(resp.text)
+                            if kind == "blocked":
+                                log.error("ip hard-blocked by cloudflare", system=system)
                                 return True
-                            log.warning("403 received, refreshing cookies", system=system)
+                            log.warning(
+                                "403 received, refreshing cookies",
+                                system=system,
+                                kind=kind,
+                                first_poll=polls_since_cookies == 0,
+                            )
                             return False
 
                         if resp.status_code != 200:
