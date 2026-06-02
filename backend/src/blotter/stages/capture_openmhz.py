@@ -272,6 +272,7 @@ class OpenMhzCaptureManager:
         log.info("openmhz capture starting", systems=len(systems))
         consecutive_failures = 0
         tls_rejections = 0
+        challenge_retries = 0
         http_client = httpx.Client(
             timeout=10,
             follow_redirects=True,
@@ -295,9 +296,9 @@ class OpenMhzCaptureManager:
                         self._malloc_trim(0)
 
                     consecutive_failures = 0
-                    rejected = self._run_poll_loop(systems, executor, http_client, cookies)
+                    polls_done = self._run_poll_loop(systems, executor, http_client, cookies)
 
-                    if rejected:
+                    if polls_done is True:
                         tls_rejections += 1
                         if tls_rejections >= 3:
                             log.error(
@@ -313,8 +314,16 @@ class OpenMhzCaptureManager:
                             retry_in=delay,
                         )
                         self._stop.wait(delay)
+                    elif polls_done == 0:
+                        tls_rejections = 0
+                        challenge_retries += 1
+                        delay = min(30 * challenge_retries, 300)
+                        log.warning("challenge on first poll, backing off",
+                                    retries=challenge_retries, retry_in=delay)
+                        self._stop.wait(delay)
                     else:
                         tls_rejections = 0
+                        challenge_retries = 0
 
                 except Exception:
                     consecutive_failures += 1
@@ -365,8 +374,8 @@ class OpenMhzCaptureManager:
         executor: ThreadPoolExecutor,
         http_client: httpx.Client,
         cookies: dict[str, str],
-    ) -> bool:
-        """Poll API using curl_cffi. Returns True if TLS fingerprint was rejected."""
+    ) -> bool | int:
+        """Poll API using curl_cffi. Returns True if hard-blocked, 0 if challenge on first poll, or polls_since_cookies (>0) on normal cookie refresh."""
         from curl_cffi.requests import Session
 
         COOKIE_REFRESH_SECONDS = 1800
@@ -386,7 +395,7 @@ class OpenMhzCaptureManager:
                         "refreshing cookies",
                         uptime_min=round((time.monotonic() - cookie_start) / 60),
                     )
-                    return False
+                    return polls_since_cookies
 
                 for system in systems:
                     if self._stop.is_set():
@@ -409,7 +418,7 @@ class OpenMhzCaptureManager:
                                 kind=kind,
                                 first_poll=polls_since_cookies == 0,
                             )
-                            return False
+                            return polls_since_cookies
 
                         if resp.status_code != 200:
                             log.warning(
@@ -426,7 +435,7 @@ class OpenMhzCaptureManager:
                             kind = _classify_response(text)
                             if kind in ("blocked", "challenge"):
                                 log.warning("cloudflare challenge", kind=kind, system=system)
-                                return False
+                                return polls_since_cookies
                             continue
 
                         if "error" in data:
@@ -476,6 +485,6 @@ class OpenMhzCaptureManager:
                 polls_since_cookies += 1
                 self._stop.wait(self.config.poll_interval)
 
-            return False
+            return polls_since_cookies
         finally:
             session.close()
