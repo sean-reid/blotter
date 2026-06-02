@@ -328,12 +328,13 @@ class Geocoder:
         self, query: str, label: str,
         division: DivisionGeo | None = None,
         system_region: SystemRegion | None = None,
+        skip_road_check: bool = False,
     ) -> tuple[float, float, str] | None:
         viewbox = division.viewbox if division else (system_region.viewbox if system_region else None)
         result = self._nominatim_lookup(query, viewbox)
         if result is None:
             return None
-        if not result.is_road:
+        if not skip_road_check and not result.is_road:
             log.debug("not a road", clause=label[:60], name=result.name,
                       osm_class=result.osm_class, osm_type=result.osm_type)
             return None
@@ -368,7 +369,8 @@ class Geocoder:
                     return result
             return None
 
-        result = self._resolve(f"{clause}, {suffix}", clause, division, system_region)
+        is_address = location.source == "address"
+        result = self._resolve(f"{clause}, {suffix}", clause, division, system_region, skip_road_check=is_address)
         if result:
             lat, lon, name = result
             return (lat, lon, _prefer_original_name(clause, name))
