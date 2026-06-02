@@ -267,7 +267,7 @@ class OpenMhzCaptureManager:
         except Exception:
             self._malloc_trim = None
 
-        self._last_times = {s: 0 for s in systems}
+        self._last_times = {s: int(time.time() * 1000) for s in systems}
 
         log.info("openmhz capture starting", systems=len(systems))
         consecutive_failures = 0
@@ -375,7 +375,7 @@ class OpenMhzCaptureManager:
 
         COOKIE_REFRESH_SECONDS = 1800
 
-        session = Session(impersonate="chrome")
+        session = Session(impersonate="chrome124")
         for name, value in cookies.items():
             session.cookies.set(name, value, domain=".openmhz.com")
 
