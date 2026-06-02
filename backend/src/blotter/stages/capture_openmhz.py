@@ -400,13 +400,8 @@ class OpenMhzCaptureManager:
                             if kind == "blocked":
                                 log.error("ip hard-blocked by cloudflare", system=system)
                                 return True
-                            log.warning(
-                                "403 received, refreshing cookies",
-                                system=system,
-                                kind=kind,
-                                first_poll=polls_since_cookies == 0,
-                            )
-                            return polls_since_cookies
+                            log.debug("403 challenge, skipping system", system=system)
+                            continue
 
                         if resp.status_code != 200:
                             log.warning(
