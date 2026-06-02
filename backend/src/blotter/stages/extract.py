@@ -32,7 +32,7 @@ DISPATCH_ANCHOR_RE = re.compile(
     r"(?:unit\s+\d|dispatch|we've got|respond|suspect|victim|"
     r"code\s+\d|10-\d{1,2}\b|adam\s+\d|boy\s+\d|lincoln\s+\d|mary\s+\d|"
     r"copy\s+that|en\s+route|on\s+scene|requesting|"
-    r"\d{2,5}\s+\w+\s+(?:street|st|avenue|ave|boulevard|blvd|drive|dr|road|rd|way)\b|"
+    r"\d{2,5}\s+(?:\w+\s+){1,3}(?:street|st|avenue|ave|boulevard|blvd|drive|dr|road|rd|way)\b|"
     r"\b(?:north|south|east|west)bound\b|\d{1,2}[A-Z]\d{1,2}\b)",
     re.IGNORECASE,
 )
