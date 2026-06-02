@@ -373,5 +373,5 @@ class Geocoder:
         result = self._resolve(f"{clause}, {suffix}", clause, division, system_region, skip_road_check=is_address)
         if result:
             lat, lon, name = result
-            return (lat, lon, _prefer_original_name(clause, name))
+            return (lat, lon, clause if is_address else _prefer_original_name(clause, name))
         return None
