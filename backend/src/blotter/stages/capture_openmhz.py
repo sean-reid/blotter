@@ -195,8 +195,7 @@ class OpenMhzCaptureManager:
         from playwright.sync_api import sync_playwright
         from playwright_stealth import Stealth
 
-        seed_time = int(time.time() * 1000)
-        seed_url = f"{self.config.api_url}/lapdvalley/calls/newer?time={seed_time}"
+        seed_url = f"{self.config.api_url}/lapdvalley/calls/newer?time=0"
         log.info("obtaining cloudflare cookies", url=seed_url)
 
         with sync_playwright() as p:
@@ -221,8 +220,8 @@ class OpenMhzCaptureManager:
                 Stealth().apply_stealth_sync(page)
                 page.set_default_timeout(15000)
 
-                page.goto(seed_url, wait_until="domcontentloaded", timeout=30000)
-                page.wait_for_timeout(5000)
+                page.goto(seed_url, wait_until="networkidle", timeout=30000)
+                page.wait_for_timeout(3000)
 
                 for attempt in range(3):
                     title = page.title().lower()
