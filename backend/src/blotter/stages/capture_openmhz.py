@@ -220,7 +220,7 @@ class OpenMhzCaptureManager:
                 Stealth().apply_stealth_sync(page)
                 page.set_default_timeout(15000)
 
-                page.goto(seed_url, wait_until="networkidle", timeout=30000)
+                page.goto(seed_url, wait_until="domcontentloaded", timeout=30000)
                 page.wait_for_timeout(3000)
 
                 for attempt in range(3):
