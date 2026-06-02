@@ -283,15 +283,8 @@ class OpenMhzCaptureManager:
         try:
             while not self._stop.is_set():
                 try:
-                    cookies: dict[str, str] = {}
-                    if challenge_retries >= 2:
-                        cookies = self._obtain_cookies() or {}
-                        gc.collect()
-                        if self._malloc_trim:
-                            self._malloc_trim(0)
-
                     consecutive_failures = 0
-                    polls_done = self._run_poll_loop(systems, executor, http_client, cookies)
+                    polls_done = self._run_poll_loop(systems, executor, http_client, {})
 
                     if polls_done is True:
                         tls_rejections += 1
