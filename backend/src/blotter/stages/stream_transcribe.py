@@ -7,7 +7,6 @@ from blotter.config import GCSConfig, StreamConfig, TranscriptionConfig
 from blotter.gcs import get_storage
 from blotter.log import get_logger
 from blotter.models import ChunkTask, TranscriptSegment
-from blotter.stages.extract import strip_ads
 from blotter.stages.transcribe import Transcriber
 
 log = get_logger(__name__)
@@ -46,21 +45,7 @@ class StreamTranscriber:
 
             duration_ms = self._get_duration_ms(local_path)
 
-            audio_path = local_path
-            if self._stream_config.ad_skip_seconds > 0:
-                audio_path = self._trim_start(local_path, self._stream_config.ad_skip_seconds)
-                self._gcs.upload(audio_path, task.chunk_path)
-                duration_ms = self._get_duration_ms(audio_path)
-
-            segments, full_text = self._transcriber.transcribe(audio_path, feed_id=task.feed_id)
-
-        if self._stream_config.ad_skip_seconds > 0:
-            full_text = strip_ads(full_text)
-            full_text = self._deduplicate_boundary(task.feed_id, full_text)
-            self._prev_text[task.feed_id] = full_text
-            self._prev_text.move_to_end(task.feed_id)
-            while len(self._prev_text) > self._max_feeds:
-                self._prev_text.popitem(last=False)
+            segments, full_text = self._transcriber.transcribe(local_path, feed_id=task.feed_id)
 
         if full_text:
             self._get_buffer(task.feed_id).append(full_text)

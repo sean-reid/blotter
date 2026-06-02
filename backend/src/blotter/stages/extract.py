@@ -93,8 +93,7 @@ LOCATION_HINT_RE = re.compile(
 
 
 def extract_clauses(text: str) -> list[ExtractedLocation]:
-    cleaned = strip_ads(text)
-    clauses = split_clauses(cleaned)
+    clauses = split_clauses(text)
     locations = []
     for clause in clauses:
         if not LOCATION_HINT_RE.search(clause):

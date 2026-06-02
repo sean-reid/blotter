@@ -5,7 +5,6 @@ import spacy
 from blotter.config import GoogleNLPConfig
 from blotter.log import get_logger
 from blotter.models import ExtractedLocation
-from blotter.stages.extract import strip_ads
 
 log = get_logger(__name__)
 
@@ -354,7 +353,7 @@ def _extract_addresses(text: str) -> list[ExtractedLocation]:
 
 
 def extract_entities(text: str, config: GoogleNLPConfig | None = None, feed_id: str | None = None) -> list[ExtractedLocation]:
-    cleaned = strip_ads(text)
+    cleaned = text.strip()
     if not cleaned:
         return []
 
