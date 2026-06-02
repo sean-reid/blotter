@@ -338,7 +338,7 @@ class Geocoder:
             log.debug("not a road", clause=label[:60], name=result.name,
                       osm_class=result.osm_class, osm_type=result.osm_type)
             return None
-        if not _name_relevant(label, result.name):
+        if not skip_road_check and not _name_relevant(label, result.name):
             log.info("name mismatch", query=label[:60], result=result.name)
             return None
         if not self._in_bounds(result.lat, result.lon, system_region):
