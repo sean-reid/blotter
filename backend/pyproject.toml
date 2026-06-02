@@ -2,7 +2,7 @@
 name = "blotter"
 version = "0.1.0"
 description = "Police scanner archive search and map"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "typer>=0.15",
     "pydantic-settings>=2.7",
