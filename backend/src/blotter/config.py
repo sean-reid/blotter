@@ -68,7 +68,7 @@ class GCSConfig(BaseSettings):
 
     bucket: str = "blotter-audio"
     project: str = ""
-    local_dir: str = "data/stream"
+    local_dir: str = "/workspace/blotter-audio"
 
 
 class RedisConfig(BaseSettings):

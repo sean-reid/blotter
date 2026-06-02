@@ -1,4 +1,6 @@
 import re
+import threading
+import time
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -68,8 +70,8 @@ class DivisionGeo:
     bound_east: float
 
     @property
-    def places_bias(self) -> str:
-        return f"rectangle:{self.bias_south},{self.bias_west}|{self.bias_north},{self.bias_east}"
+    def viewbox(self) -> str:
+        return f"{self.bias_west},{self.bias_north},{self.bias_east},{self.bias_south}"
 
     def contains(self, lat: float, lon: float) -> bool:
         return (self.bound_south <= lat <= self.bound_north
@@ -114,8 +116,8 @@ class SystemRegion:
     bias_east: float
 
     @property
-    def places_bias(self) -> str:
-        return f"rectangle:{self.bias_south},{self.bias_west}|{self.bias_north},{self.bias_east}"
+    def viewbox(self) -> str:
+        return f"{self.bias_west},{self.bias_north},{self.bias_east},{self.bias_south}"
 
     def contains(self, lat: float, lon: float) -> bool:
         return (self.bias_south - 0.15 <= lat <= self.bias_north + 0.15
@@ -235,30 +237,50 @@ def _match_division(feed_name: str) -> DivisionGeo | None:
     return None
 
 
-class PlaceResult:
-    __slots__ = ("name", "lat", "lon", "types")
+_NOMINATIM_ROAD_CLASSES = {"highway", "junction"}
+_NOMINATIM_ROAD_TYPES = {
+    "residential", "primary", "secondary", "tertiary", "trunk",
+    "motorway", "unclassified", "service", "living_street",
+    "pedestrian", "track", "road", "path",
+    "primary_link", "secondary_link", "tertiary_link", "trunk_link", "motorway_link",
+    "intersection",
+}
 
-    def __init__(self, name: str, lat: float, lon: float, types: list[str]) -> None:
+
+class PlaceResult:
+    __slots__ = ("name", "lat", "lon", "osm_class", "osm_type")
+
+    def __init__(self, name: str, lat: float, lon: float, osm_class: str, osm_type: str) -> None:
         self.name = name
         self.lat = lat
         self.lon = lon
-        self.types = types
+        self.osm_class = osm_class
+        self.osm_type = osm_type
 
     @property
     def is_road(self) -> bool:
-        if set(self.types) & ROAD_TYPES:
-            return True
-        if "/" in self.name and "transit_station" in self.types:
-            return True
-        return False
+        return self.osm_class in _NOMINATIM_ROAD_CLASSES or self.osm_type in _NOMINATIM_ROAD_TYPES
 
 
 class Geocoder:
     def __init__(self, config: GoogleGeocodingConfig, region: RegionConfig) -> None:
-        self.api_key = config.api_key
         self.region = region
         self._default_bbox = box(region.bbox_west, region.bbox_south, region.bbox_east, region.bbox_north)
-        self._client = httpx.Client(timeout=10)
+        self._default_viewbox = f"{region.bbox_west},{region.bbox_north},{region.bbox_east},{region.bbox_south}"
+        self._client = httpx.Client(
+            timeout=10,
+            headers={"User-Agent": "blotter/1.0 (police-scanner-map)"},
+        )
+        self._rate_lock = threading.Lock()
+        self._last_request = 0.0
+
+    def _rate_limit(self) -> None:
+        with self._rate_lock:
+            now = time.monotonic()
+            elapsed = now - self._last_request
+            if elapsed < 1.0:
+                time.sleep(1.0 - elapsed)
+            self._last_request = time.monotonic()
 
     def _in_bounds(self, lat: float, lon: float, system_region: SystemRegion | None = None) -> bool:
         if system_region:
@@ -266,35 +288,40 @@ class Geocoder:
         return self._default_bbox.contains(Point(lon, lat))
 
     @lru_cache(maxsize=4096)
-    def _places_lookup(self, query: str, bias: str | None = None) -> PlaceResult | None:
+    def _nominatim_lookup(self, query: str, viewbox: str | None = None) -> PlaceResult | None:
+        self._rate_limit()
         try:
+            params: dict[str, str] = {
+                "q": query,
+                "format": "json",
+                "limit": "1",
+                "addressdetails": "0",
+            }
+            vb = viewbox or self._default_viewbox
+            if vb:
+                params["viewbox"] = vb
+                params["bounded"] = "0"
+
             resp = self._client.get(
-                "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
-                params={
-                    "input": query,
-                    "inputtype": "textquery",
-                    "fields": "geometry,name,types",
-                    "locationbias": bias or self.region.places_bias,
-                    "key": self.api_key,
-                },
+                "https://nominatim.openstreetmap.org/search",
+                params=params,
             )
             resp.raise_for_status()
-            data = resp.json()
+            results = resp.json()
         except Exception:
-            log.warning("places lookup failed", query=query)
+            log.warning("nominatim lookup failed", query=query)
             return None
 
-        candidates = data.get("candidates", [])
-        if not candidates:
+        if not results:
             return None
 
-        c = candidates[0]
-        loc = c["geometry"]["location"]
+        r = results[0]
         return PlaceResult(
-            name=c.get("name", ""),
-            lat=loc["lat"],
-            lon=loc["lng"],
-            types=c.get("types", []),
+            name=r.get("display_name", "").split(",")[0].strip(),
+            lat=float(r["lat"]),
+            lon=float(r["lon"]),
+            osm_class=r.get("class", ""),
+            osm_type=r.get("type", ""),
         )
 
     def _resolve(
@@ -302,12 +329,13 @@ class Geocoder:
         division: DivisionGeo | None = None,
         system_region: SystemRegion | None = None,
     ) -> tuple[float, float, str] | None:
-        bias = division.places_bias if division else (system_region.places_bias if system_region else None)
-        result = self._places_lookup(query, bias)
+        viewbox = division.viewbox if division else (system_region.viewbox if system_region else None)
+        result = self._nominatim_lookup(query, viewbox)
         if result is None:
             return None
         if not result.is_road:
-            log.debug("not a road", clause=label[:60], name=result.name, types=result.types[:3])
+            log.debug("not a road", clause=label[:60], name=result.name,
+                      osm_class=result.osm_class, osm_type=result.osm_type)
             return None
         if not _name_relevant(label, result.name):
             log.info("name mismatch", query=label[:60], result=result.name)
@@ -331,9 +359,8 @@ class Geocoder:
         if location.source == "nlp_intersection" and " and " in clause:
             parts = clause.split(" and ", 1)
             queries = [
-                f"intersection of {parts[0]} and {parts[1]}, {suffix}",
+                f"{parts[0]} and {parts[1]}, {suffix}",
                 f"{parts[0]} & {parts[1]}, {suffix}",
-                f"intersection of {parts[1]} and {parts[0]}, {suffix}",
             ]
             for q in queries:
                 result = self._resolve(q, clause, division, system_region)

@@ -1,6 +1,6 @@
 import re
 
-import httpx
+import spacy
 
 from blotter.config import GoogleNLPConfig
 from blotter.log import get_logger
@@ -10,7 +10,6 @@ from blotter.stages.extract import strip_ads
 log = get_logger(__name__)
 
 LOCATION_TYPES = {"LOCATION", "ADDRESS"}
-INTERSECTION_ENTITY_TYPES = {"LOCATION", "ADDRESS", "PERSON"}
 MIN_SALIENCE = 0.03
 
 JUNCTION_RE = re.compile(r"\band\b|\bat\b|&|/|,", re.IGNORECASE)
@@ -51,32 +50,20 @@ SUSPECT_DESC_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Standalone words that NLP extracts as entities but are never dispatch locations.
 _SKIP_COMMON = {
-    # dispatch roles / people
     "suspect", "victim", "male", "female", "supervisor", "officer",
     "informant", "complainant", "witness", "caller", "reporting party",
     "p.o.", "po", "pr", "rp",
-
-    # generic place words
     "location", "area", "block", "scene", "route", "place",
     "corner", "island", "campus", "intersection",
-
-    # standalone street type words (NLP sometimes returns just "Avenue")
     "street", "avenue", "boulevard", "road", "drive", "way",
     "lane", "place", "court", "alley",
     "freeway", "highway", "interstate",
     "onramp", "offramp", "off-ramp", "on-ramp",
-
-    # cardinal directions
     "south", "north", "east", "west",
     "southwest", "southeast", "northeast", "northwest",
-
-    # Police divisions / bureaus / districts (not street addresses)
     "division", "bureau", "station", "frequency",
     "precinct", "district", "sector", "zone", "battalion",
-
-    # Phonetic alphabet / unit callsigns (standalone)
     "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf",
     "hotel", "india", "juliet", "kilo", "lima", "mike", "november",
     "oscar", "papa", "quebec", "romeo", "sierra", "tango", "uniform",
@@ -85,14 +72,10 @@ _SKIP_COMMON = {
     "henry", "ida", "john", "king", "lincoln", "mary", "nora", "ocean",
     "paul", "queen", "robert", "sam", "tom", "union", "victor",
     "william", "young", "zebra", "boy",
-
-    # dispatch vocabulary
     "unit", "dispatch", "ambulance", "backup", "custody",
     "stop", "roger", "roger that", "number one",
     "front desk", "front", "desk", "system", "radio", "channel",
     "team", "team family", "family",
-
-    # common NLP false positives
     "people", "president", "minorities",
     "cash back", "insurance", "commercial",
     "wood", "james", "beach", "garden", "park", "hill",
@@ -267,6 +250,17 @@ FREEWAY_RE = re.compile(
     re.IGNORECASE,
 )
 
+_SPACY_LOCATION_LABELS = {"GPE", "LOC", "FAC"}
+_nlp_model: spacy.Language | None = None
+
+
+def _get_nlp() -> spacy.Language:
+    global _nlp_model
+    if _nlp_model is None:
+        _nlp_model = spacy.load("en_core_web_sm", disable=["lemmatizer"])
+        log.info("spacy model loaded", model="en_core_web_sm")
+    return _nlp_model
+
 
 def _is_plausible_location(name: str) -> bool:
     if CODE_PATTERN_RE.match(name):
@@ -292,62 +286,16 @@ def _get_context(text: str, mention: str, window: int = 120) -> str:
     return prefix + text[start:end].strip() + suffix
 
 
-_shared_client: httpx.Client | None = None
-
-
-def _get_client() -> httpx.Client:
-    global _shared_client
-    if _shared_client is None:
-        _shared_client = httpx.Client(timeout=15)
-    return _shared_client
-
-
-def _call_nlp(text: str, api_key: str) -> list[dict]:
-    resp = _get_client().post(
-        "https://language.googleapis.com/v1/documents:analyzeEntities",
-        params={"key": api_key},
-        json={
-            "document": {"type": "PLAIN_TEXT", "content": text},
-            "encodingType": "UTF8",
-        },
-    )
-    resp.raise_for_status()
-    return resp.json().get("entities", [])
-
-
-def _mention_offset(entity: dict) -> int | None:
-    mentions = entity.get("mentions", [])
-    if not mentions:
-        return None
-    return mentions[0].get("text", {}).get("beginOffset")
-
-
-def _ordinal_at(text: str, offset: int, num_len: int) -> str | None:
-    end = offset + num_len
-    suffix = text[end:end + 2].lower()
-    if suffix[:2] in ("th", "st", "nd", "rd"):
-        return text[offset:end + 2]
-    return None
-
-
-def _find_intersections(text: str, entities: list[dict], skip_names: set[str]) -> list[tuple[str, int]]:
+def _find_intersections(
+    text: str,
+    entities: list[tuple[str, int, int]],
+    skip_names: set[str],
+) -> list[tuple[str, int]]:
     located = []
-    for e in entities:
-        etype = e.get("type")
-        offset = _mention_offset(e)
-        if offset is None:
+    for name, offset, length in entities:
+        if name.lower() in skip_names or len(name) < 3 or not _is_plausible_location(name):
             continue
-        name = e.get("name", "").strip()
-        mention = e.get("mentions", [{}])[0].get("text", {}).get("content", name)
-
-        if etype in INTERSECTION_ENTITY_TYPES:
-            if name.lower() in skip_names or len(name) < 3 or not _is_plausible_location(name):
-                continue
-            located.append((name, offset, len(mention)))
-        elif etype == "NUMBER":
-            ordinal = _ordinal_at(text, offset, len(mention))
-            if ordinal:
-                located.append((ordinal, offset, len(ordinal)))
+        located.append((name, offset, length))
 
     located.sort(key=lambda x: x[1])
 
@@ -371,7 +319,6 @@ def _find_intersections(text: str, entities: list[dict], skip_names: set[str]) -
 
 
 def _dedup_locations(locations: list[ExtractedLocation]) -> list[ExtractedLocation]:
-    """Remove locations that are substrings of other resolved locations."""
     result = []
     names = {loc.normalized.lower() for loc in locations}
     for loc in locations:
@@ -388,7 +335,6 @@ def _dedup_locations(locations: list[ExtractedLocation]) -> list[ExtractedLocati
 
 
 def _extract_addresses(text: str) -> list[ExtractedLocation]:
-    """Extract explicit street addresses (e.g. '115 South Conway Street') from text."""
     locations = []
     seen: set[str] = set()
     for m in STREET_ADDRESS_RE.finditer(text):
@@ -407,9 +353,9 @@ def _extract_addresses(text: str) -> list[ExtractedLocation]:
     return locations
 
 
-def extract_entities(text: str, config: GoogleNLPConfig, feed_id: str | None = None) -> list[ExtractedLocation]:
+def extract_entities(text: str, config: GoogleNLPConfig | None = None, feed_id: str | None = None) -> list[ExtractedLocation]:
     cleaned = strip_ads(text)
-    if not cleaned or not config.api_key:
+    if not cleaned:
         return []
 
     skip_names = _get_skip_names(feed_id)
@@ -419,13 +365,17 @@ def extract_entities(text: str, config: GoogleNLPConfig, feed_id: str | None = N
     cleaned = DISPATCH_REF_RE.sub("", cleaned)
     cleaned = SUSPECT_DESC_RE.sub("", cleaned)
 
-    try:
-        entities = _call_nlp(cleaned, config.api_key)
-    except Exception:
-        log.warning("nlp entity extraction failed", exc_info=True)
-        return addresses
+    nlp = _get_nlp()
+    doc = nlp(cleaned)
 
-    intersections = _find_intersections(cleaned, entities, skip_names)
+    spacy_entities: list[tuple[str, int, int]] = []
+    for ent in doc.ents:
+        if ent.label_ in _SPACY_LOCATION_LABELS:
+            spacy_entities.append((ent.text, ent.start_char, len(ent.text)))
+        elif ent.label_ in ("CARDINAL", "ORDINAL"):
+            spacy_entities.append((ent.text, ent.start_char, len(ent.text)))
+
+    intersections = _find_intersections(cleaned, spacy_entities, skip_names)
     intersection_names = {name for name, _ in intersections}
 
     seen: set[str] = {loc.normalized.lower() for loc in addresses}
@@ -444,17 +394,13 @@ def extract_entities(text: str, config: GoogleNLPConfig, feed_id: str | None = N
             context=_get_context(text, name.split(" and ")[0]),
         ))
 
-    for entity in entities:
-        etype = entity.get("type")
-        if etype not in LOCATION_TYPES:
+    for ent in doc.ents:
+        if ent.label_ not in _SPACY_LOCATION_LABELS:
             continue
-        name = entity.get("name", "").strip()
+        name = ent.text.strip()
         if name.lower() in skip_names or len(name) < 3:
             continue
         if not _is_plausible_location(name):
-            continue
-        salience = entity.get("salience", 0.0)
-        if salience < MIN_SALIENCE:
             continue
         key = name.lower()
         if key in seen:
@@ -464,15 +410,12 @@ def extract_entities(text: str, config: GoogleNLPConfig, feed_id: str | None = N
             continue
         seen.add(key)
 
-        mentions = entity.get("mentions", [])
-        mention_text = mentions[0]["text"]["content"] if mentions else name
-
         locations.append(ExtractedLocation(
-            raw_text=mention_text,
+            raw_text=ent.text,
             normalized=name,
-            confidence=salience,
+            confidence=0.5,
             source="nlp",
-            context=_get_context(text, mention_text),
+            context=_get_context(text, ent.text),
         ))
 
     locations = _dedup_locations(locations)

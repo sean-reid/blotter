@@ -67,7 +67,11 @@ cd "$REPO_DIR/backend"
 uv sync 2>/dev/null
 uv pip install playwright 2>/dev/null
 uv run playwright install chromium --with-deps 2>/dev/null
-echo "[OK] Python packages + Playwright"
+uv run python -m spacy download en_core_web_sm 2>/dev/null
+echo "[OK] Python packages + Playwright + spaCy"
+
+# Create local audio storage directory
+mkdir -p /workspace/blotter-audio
 
 # Initialize PostgreSQL (schema — pg_restore will overwrite with real data if dump exists)
 pg_ctlcluster 16 main start 2>/dev/null || true

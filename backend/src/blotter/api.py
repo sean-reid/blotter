@@ -1,6 +1,7 @@
 import json
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 import psycopg
@@ -9,7 +10,7 @@ from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, PlainTextResponse
+from starlette.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from starlette.routing import Route
 
 from blotter.config import PostgresConfig
@@ -228,6 +229,20 @@ _NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "")
 _CANARY_SECRET = os.environ.get("CANARY_SECRET", "")
 
 
+_AUDIO_DIR = Path(os.environ.get("BLOTTER_AUDIO_DIR", "/workspace/blotter-audio"))
+
+
+async def audio(request: Request) -> Response:
+    path = request.path_params["path"]
+    if ".." in path or path.startswith("/"):
+        return PlainTextResponse("forbidden", status_code=403)
+    file_path = _AUDIO_DIR / path
+    if not file_path.is_file():
+        return PlainTextResponse("not found", status_code=404)
+    media = "audio/mpeg" if file_path.suffix == ".mp3" else "audio/wav"
+    return FileResponse(file_path, media_type=media)
+
+
 async def canary(request: Request) -> PlainTextResponse:
     if request.query_params.get("key") != _CANARY_SECRET or not _CANARY_SECRET:
         return PlainTextResponse("unauthorized", status_code=401)
@@ -263,6 +278,7 @@ app = Starlette(
     Route("/api/events/for-transcript", event_for_transcript),
     Route("/api/events/related", related_events),
     Route("/api/transcripts/search", search_transcripts),
+    Route("/api/audio/{path:path}", audio),
     Route("/api/health", health),
     Route("/api/canary", canary),
 ])

@@ -4,6 +4,7 @@ import {
   fetchIncidentTranscripts,
   fetchStreetFilteredTranscripts,
   fetchSurroundingTranscripts,
+  resolveAudioUrl,
 } from "../lib/api";
 import type { RelatedFeedEvent } from "../lib/types";
 import Tags from "./Tags";
@@ -206,7 +207,7 @@ export default function EventPanel({ event, onClose }: Props) {
     const ctx = ctxRef.current;
     if (ctx.state === "suspended") ctx.resume();
 
-    fetch(audioUrl, { cache: "no-store" })
+    fetch(resolveAudioUrl(audioUrl), { cache: "no-store" })
       .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.arrayBuffer(); })
       .then((buf) => { if (loadingUrlRef.current !== audioUrl) return; return ctx.decodeAudioData(buf); })
       .then((decoded) => {
