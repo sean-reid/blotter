@@ -13,7 +13,7 @@ import httpx
 import redis
 
 from blotter.config import GCSConfig, OpenMhzConfig, RedisConfig
-from blotter.gcs import GCSClient, LocalStorageClient, get_storage
+from blotter.gcs import LocalStorageClient, get_storage
 from blotter.log import get_logger
 from blotter.models import ChunkTask
 from blotter.queue import enqueue_chunk
@@ -88,7 +88,7 @@ def _convert_to_wav(m4a_path: Path, wav_path: Path) -> bool:
 def _process_call(
     call: dict,
     system: str,
-    gcs: GCSClient | LocalStorageClient,
+    gcs: LocalStorageClient,
     r: redis.Redis,
     chunk_index: int,
     http_client: httpx.Client | None = None,

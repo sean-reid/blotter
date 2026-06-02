@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { resolveAudioUrl } from "../lib/api";
 import type { TranscriptSegment } from "../lib/types";
 
 interface Props {
@@ -279,7 +280,7 @@ export default function TranscriptPlayer({ audioUrl, segments, context, searchQu
     }
     const ctx = ctxRef.current;
 
-    fetch(audioUrl)
+    fetch(resolveAudioUrl(audioUrl))
       .then((r) => {
         if (!r.ok) throw new Error(`${r.status}`);
         return r.arrayBuffer();

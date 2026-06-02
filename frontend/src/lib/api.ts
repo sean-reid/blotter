@@ -3,6 +3,11 @@ import type { RelatedFeedEvent, ScannerEvent, TranscriptResult } from "./types";
 const API_BASE = import.meta.env.VITE_API_URL ||
   (import.meta.env.PROD ? "https://api.blotter.fm" : "");
 
+export function resolveAudioUrl(url: string): string {
+  if (!url || url.startsWith("http")) return url;
+  return `${API_BASE}${url}`;
+}
+
 async function get<T>(path: string, params: Record<string, string>): Promise<T> {
   const url = new URL(path, API_BASE || window.location.origin);
   for (const [key, value] of Object.entries(params)) {
