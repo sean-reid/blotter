@@ -64,7 +64,7 @@ echo "[OK] Repo"
 
 # Install/sync Python backend
 cd "$REPO_DIR/backend"
-if [ -d .venv ] && ! .venv/bin/python --version 2>/dev/null | grep -qE '3\.(12|13)'; then
+if [ -d .venv ] && ! .venv/bin/python --version 2>/dev/null | grep -qE '3\.12\.'; then
   rm -rf .venv
 fi
 uv sync 2>/dev/null
