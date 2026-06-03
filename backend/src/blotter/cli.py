@@ -68,7 +68,7 @@ def stream_start(
     import multiprocessing
     import signal
 
-    multiprocessing.set_start_method("fork", force=True)
+    multiprocessing.set_start_method("spawn", force=True)
 
     settings = get_settings()
     procs: list[multiprocessing.Process] = []
