@@ -2,7 +2,7 @@
 name = "blotter"
 version = "0.1.0"
 description = "Police scanner archive search and map"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12"
 dependencies = [
     "typer>=0.15",
     "pydantic-settings>=2.7",
@@ -14,7 +14,6 @@ dependencies = [
     "shapely>=2.0",
     "faster-whisper>=1.1",
     "pydub>=0.25",
-    "spacy>=3.7",
     "redis>=5.0",
     "sentence-transformers>=3.0",
     "playwright-stealth>=2.0",

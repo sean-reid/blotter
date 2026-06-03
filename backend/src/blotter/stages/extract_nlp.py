@@ -1,15 +1,10 @@
 import re
 
-import spacy
-
 from blotter.config import GoogleNLPConfig
 from blotter.log import get_logger
 from blotter.models import ExtractedLocation
 
 log = get_logger(__name__)
-
-LOCATION_TYPES = {"LOCATION", "ADDRESS"}
-MIN_SALIENCE = 0.03
 
 JUNCTION_RE = re.compile(r"\band\b|\bat\b|&|/|,", re.IGNORECASE)
 
@@ -249,16 +244,13 @@ FREEWAY_RE = re.compile(
     re.IGNORECASE,
 )
 
-_SPACY_LOCATION_LABELS = {"GPE", "LOC", "FAC"}
-_nlp_model: spacy.Language | None = None
+STREET_NAME_RE = re.compile(
+    r"\b((?:[A-Z][a-zA-Z]+\s+){1,3}"
+    r"(?:[Ss]treet|[Ss]t|[Aa]venue|[Aa]ve|[Bb]oulevard|[Bb]lvd|[Dd]rive|[Dd]r|[Rr]oad|[Rr]d|[Ww]ay|[Ll]ane|[Ll]n|[Pp]lace|[Pp]l|[Cc]ourt|[Cc]t))"
+    r"\b\.?",
+)
 
-
-def _get_nlp() -> spacy.Language:
-    global _nlp_model
-    if _nlp_model is None:
-        _nlp_model = spacy.load("en_core_web_sm", disable=["lemmatizer"])
-        log.info("spacy model loaded", model="en_core_web_sm")
-    return _nlp_model
+ORDINAL_RE = re.compile(r"\b(\d+(?:th|st|nd|rd))\b", re.IGNORECASE)
 
 
 def _is_plausible_location(name: str) -> bool:
@@ -364,17 +356,13 @@ def extract_entities(text: str, config: GoogleNLPConfig | None = None, feed_id: 
     cleaned = DISPATCH_REF_RE.sub("", cleaned)
     cleaned = SUSPECT_DESC_RE.sub("", cleaned)
 
-    nlp = _get_nlp()
-    doc = nlp(cleaned)
+    regex_entities: list[tuple[str, int, int]] = []
+    for m in STREET_NAME_RE.finditer(cleaned):
+        regex_entities.append((m.group(1), m.start(1), len(m.group(1))))
+    for m in ORDINAL_RE.finditer(cleaned):
+        regex_entities.append((m.group(1), m.start(1), len(m.group(1))))
 
-    spacy_entities: list[tuple[str, int, int]] = []
-    for ent in doc.ents:
-        if ent.label_ in _SPACY_LOCATION_LABELS:
-            spacy_entities.append((ent.text, ent.start_char, len(ent.text)))
-        elif ent.label_ in ("CARDINAL", "ORDINAL"):
-            spacy_entities.append((ent.text, ent.start_char, len(ent.text)))
-
-    intersections = _find_intersections(cleaned, spacy_entities, skip_names)
+    intersections = _find_intersections(cleaned, regex_entities, skip_names)
     intersection_names = {name for name, _ in intersections}
 
     seen: set[str] = {loc.normalized.lower() for loc in addresses}
@@ -393,10 +381,8 @@ def extract_entities(text: str, config: GoogleNLPConfig | None = None, feed_id: 
             context=_get_context(text, name.split(" and ")[0]),
         ))
 
-    for ent in doc.ents:
-        if ent.label_ not in _SPACY_LOCATION_LABELS:
-            continue
-        name = ent.text.strip()
+    for name, start, length in regex_entities:
+        name = name.strip()
         if name.lower() in skip_names or len(name) < 3:
             continue
         if not _is_plausible_location(name):
@@ -408,16 +394,15 @@ def extract_entities(text: str, config: GoogleNLPConfig | None = None, feed_id: 
         if already_in_intersection:
             continue
         seen.add(key)
-
         locations.append(ExtractedLocation(
-            raw_text=ent.text,
+            raw_text=name,
             normalized=name,
             confidence=0.5,
-            source="nlp",
-            context=_get_context(text, ent.text),
+            source="regex",
+            context=_get_context(text, name),
         ))
 
     locations = _dedup_locations(locations)
-    log.info("nlp entities extracted", count=len(locations),
+    log.info("entities extracted", count=len(locations),
              addresses=len(addresses), intersections=len(intersections))
     return locations
