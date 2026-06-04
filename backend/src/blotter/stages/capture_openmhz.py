@@ -1,7 +1,6 @@
 import gc
 import json
 import signal
-import subprocess
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -66,25 +65,6 @@ def _feed_name(system: str, tg_num: int) -> str:
     return f"{display} - {label}"
 
 
-def _convert_to_wav(m4a_path: Path, wav_path: Path) -> bool:
-    try:
-        subprocess.run(
-            [
-                "ffmpeg", "-y",
-                "-i", str(m4a_path),
-                "-ar", "16000",
-                "-ac", "1",
-                "-c:a", "pcm_s16le",
-                str(wav_path),
-            ],
-            check=True, capture_output=True, timeout=30,
-        )
-        return True
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-        log.error("m4a conversion failed", error=str(e))
-        return False
-
-
 def _process_call(
     call: dict,
     system: str,
@@ -115,36 +95,31 @@ def _process_call(
     feed_name = _feed_name(system, tg_num)
 
     with tempfile.TemporaryDirectory(prefix="blotter_omhz_") as tmpdir:
-        tmpdir_path = Path(tmpdir)
-        m4a_path = tmpdir_path / "call.mp3"
-        wav_path = tmpdir_path / "call.wav"
+        mp3_path = Path(tmpdir) / "call.mp3"
 
         try:
             client = http_client or httpx
             resp = client.get(audio_url, timeout=10, follow_redirects=True)
             resp.raise_for_status()
-            m4a_path.write_bytes(resp.content)
+            mp3_path.write_bytes(resp.content)
             resp.close()
         except Exception:
             log.debug("audio download failed", system=system, tg=tg_num)
             return
 
-        if not _convert_to_wav(m4a_path, wav_path):
-            return
-
         date_str = ts.strftime("%Y-%m-%d")
         ts_str = ts.strftime("%Y%m%d_%H%M%S")
-        gcs_path = f"{system}/{date_str}/{tg_num}-{ts_str}.wav"
+        storage_path = f"{system}/{date_str}/{tg_num}-{ts_str}.mp3"
 
-        gcs.upload(wav_path, gcs_path)
-        signed_url = gcs.signed_url(gcs_path)
+        gcs.upload(mp3_path, storage_path)
+        signed_url = gcs.signed_url(storage_path)
 
         duration_ms = int(call_len * 1000)
 
         task = ChunkTask(
             feed_id=feed_id,
             feed_name=feed_name,
-            chunk_path=gcs_path,
+            chunk_path=storage_path,
             audio_url=signed_url,
             chunk_ts=ts,
             chunk_index=chunk_index,

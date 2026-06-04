@@ -40,7 +40,8 @@ class StreamTranscriber:
 
     def process_chunk(self, task: ChunkTask) -> tuple[list[TranscriptSegment], str, int]:
         with tempfile.TemporaryDirectory(prefix="blotter_") as tmpdir:
-            local_path = Path(tmpdir) / "chunk.wav"
+            ext = Path(task.chunk_path).suffix or ".mp3"
+            local_path = Path(tmpdir) / f"chunk{ext}"
             self._gcs.download(task.chunk_path, local_path)
 
             duration_ms = self._get_duration_ms(local_path)
