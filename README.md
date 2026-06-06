@@ -14,7 +14,7 @@ flowchart TB
 
   FEEDS(["24 OpenMHz Systems<br/>LA, Chicago, Charlotte, Philly,<br/>Seattle, SF, Dallas, Portland, +16"])
 
-  CAPTURE["OpenMHz Poller<br/>Playwright per-system<br/>per-call WAV download"]
+  CAPTURE["OpenMHz Poller<br/>curl_cffi (chrome124)<br/>per-call MP3 download"]
 
   Q1[["Redis queue<br/>capture:chunks"]]
 
@@ -22,7 +22,7 @@ flowchart TB
 
   Q2[["Redis queue<br/>transcribe:done"]]
 
-  EXTRACT["NLP Entity Extraction<br/>+ Google Places Geocoding<br/>per-city region bias<br/>event dedup 10min/500m"]
+  EXTRACT["Regex Entity Extraction<br/>+ Nominatim Geocoding<br/>per-city region bias<br/>event dedup 10min/500m"]
 
   OLLAMA["Ollama · Qwen 2.5 7B<br/>one-sentence event summaries"]
 
@@ -32,14 +32,14 @@ flowchart TB
     T_EV[("scanner_events")]
   end
 
-  API["Starlette API<br/>api.blotter.fm:8080"]
+  LOCAL[("Local Storage<br/>/workspace/blotter-audio<br/>MP3 · 7-day TTL")]
+
+  API["Starlette API<br/>api.blotter.fm:8080<br/>+ audio serving"]
   TUNNEL["cloudflared tunnel<br/>api.blotter.fm"]
   SPA["React + MapLibre SPA<br/>blotter.fm · Cloudflare Pages"]
   USER(["User · browser / mobile"])
 
-  GCS[("GCS · blotter-audio<br/>signed URLs 24h")]
-  GNLP["Google NLP API<br/>entity extraction"]
-  GPLACES["Google Places API<br/>findplacefromtext"]
+  NOM["Nominatim<br/>OpenStreetMap geocoding"]
 
   MON["Monitoring Loop<br/>heartbeat, procs, disk,<br/>queues, services,<br/>daily digest"]
   NTFY["ntfy.sh<br/>push alerts"]
@@ -62,11 +62,11 @@ flowchart TB
   TUNNEL --- SPA
   SPA --- USER
 
-  CAPTURE -->|"upload wav"| GCS
-  SPA -.->|"audio playback"| GCS
+  CAPTURE -->|"store mp3"| LOCAL
+  API -->|"serve audio"| LOCAL
+  SPA -.->|"audio playback"| API
 
-  EXTRACT --> GNLP
-  EXTRACT --> GPLACES
+  EXTRACT --> NOM
 
   MON -->|"alerts"| NTFY
   CANARY -->|"health check"| API
@@ -77,15 +77,15 @@ flowchart TB
   classDef queue fill:#92400e,stroke:#f59e0b,color:#fff
   classDef db fill:#1e3a5f,stroke:#60a5fa,color:#fff
   classDef stage fill:#14532d,stroke:#4ade80,color:#fff
-  classDef google fill:#312e81,stroke:#818cf8,color:#fff
+  classDef ext fill:#312e81,stroke:#818cf8,color:#fff
   classDef alert fill:#7f1d1d,stroke:#f87171,color:#fff
   classDef serve fill:#1a3344,stroke:#f97316,color:#fff
   classDef user fill:#475569,stroke:#94a3b8,color:#fff
 
   class Q1,Q2 queue
-  class T_TX,T_EV,GCS db
+  class T_TX,T_EV,LOCAL db
   class CAPTURE,WHISPER,EXTRACT,OLLAMA stage
-  class GNLP,GPLACES google
+  class NOM ext
   class NTFY,CANARY,MON alert
   class TUNNEL,API,SPA serve
   class USER,FEEDS user
@@ -96,20 +96,20 @@ flowchart TB
 
 | Layer | Technology |
 |-------|-----------|
-| Audio capture | OpenMHz API via Playwright, per-call WAV, Google Cloud Storage |
+| Audio capture | OpenMHz API via curl_cffi (Chrome 124 TLS), per-call MP3, local storage |
 | Transcription | faster-whisper large-v3 on CUDA GPU, locale-specific prompts |
-| NLP | Google Cloud Natural Language API |
-| Geocoding | Google Places API with per-city region biasing |
+| NLP | Regex-based entity extraction (street addresses, intersections, street names) |
+| Geocoding | Nominatim (OpenStreetMap) with per-city region biasing |
 | Summarization | Ollama (Qwen 2.5 7B on GPU) |
 | Database | PostgreSQL 16 (pg_trgm full-text, 7-day TTL) |
 | Queues | Redis (in-memory, two-stage pipeline) |
-| API | Starlette + uvicorn (REST, CORS) |
+| API | Starlette + uvicorn (REST, CORS, audio file serving) |
 | Frontend | React 19, MapLibre GL, Tailwind CSS |
 | Hosting | Cloudflare Pages (SPA) |
 | Tunnel | Cloudflare Tunnel (token-based, api.blotter.fm) |
 | Monitoring | supervisord monitoring loop, ntfy.sh push alerts, cronjob.org canary |
 | GPU | RunPod (A5000 24GB VRAM) |
-| Process management | supervisord (redis, postgres, ollama, cloudflared, api, pipeline, monitoring) |
+| Process management | supervisord (redis, postgres, ollama, cloudflared, api, pipeline, monitoring, pg-backup, pg-ttl) |
 
 ## Project structure
 
@@ -117,18 +117,20 @@ flowchart TB
 backend/
   src/blotter/
     stages/
-      capture_openmhz.py    # OpenMHz per-call capture via Playwright
+      capture_openmhz.py    # OpenMHz per-call capture via curl_cffi
       stream_transcribe.py  # Whisper transcription with locale prompts
-      extract.py            # Location clause extraction
-      extract_nlp.py        # Google NLP entity extraction
+      extract.py            # Location clause extraction (regex)
+      extract_nlp.py        # Regex entity extraction (addresses, streets, intersections)
       extract_codes.py      # Police/10-code/signal code tagging
-      geocode.py            # Google Places geocoding with per-city bias
+      geocode.py            # Nominatim geocoding with per-city bias
       summarize.py          # Ollama event summarization
+      embed.py              # Sentence-transformer embeddings
       worker.py             # Process managers (capture, transcribe, process)
+      transcribe.py         # Whisper model wrapper
     config.py               # Pydantic settings (env-based)
     db.py                   # PostgreSQL client (psycopg)
-    api.py                  # Starlette REST API
-    gcs.py                  # GCS + local storage abstraction
+    api.py                  # Starlette REST API + audio serving
+    gcs.py                  # Local storage client
     queue.py                # Redis queue helpers
     models.py               # Data models
     cli.py                  # Typer CLI entry points
@@ -155,16 +157,17 @@ infra/
     pg_dump.sh              # Hourly dump to network volume
     pg_restore.sh           # Restore from dump on startup
   supervisord/
-    supervisord.conf        # Process management (9 services)
+    supervisord.conf        # Process management (10 services)
   monitoring/
     monitoring_loop.sh      # Tick-based monitoring loop
     heartbeat.sh            # Pipeline heartbeat (events + transcripts)
     check_procs.sh          # supervisord process health
     check_disk.sh           # Disk usage + orphan chunks
-    check_queues.sh         # Redis queue depths (alert > 30)
+    check_queues.sh         # Redis queue depths (alert if growing)
     check_services.sh       # Redis/API ping
+    check_memory.sh         # Memory usage tracking
     daily_summary.sh        # Daily digest at 9am PT
-  runpod/setup.sh           # Pod bootstrap script
+  runpod/setup.sh           # Pod bootstrap script (auto-runs on restart)
   caddy/Caddyfile           # Reverse proxy (local dev)
   docker-compose.yml        # Local dev (PostgreSQL + Redis + Caddy)
 ```
@@ -179,8 +182,8 @@ docker compose up -d
 # Backend
 cd backend
 uv sync
-cp .env.example .env  # configure feeds, API keys
-uv run blotter stream start --openmhz
+cp .env.example .env  # configure feeds
+uv run blotter stream start
 
 # Frontend
 cd frontend
@@ -188,10 +191,10 @@ npm install
 npm run dev
 ```
 
-Requires: ffmpeg, Redis, PostgreSQL, NVIDIA GPU with CUDA (for Whisper + Ollama), Playwright.
+Requires: ffmpeg, Redis, PostgreSQL, NVIDIA GPU with CUDA (for Whisper + Ollama).
 
 ## Deployment
 
-**Backend**: The RunPod pod boots from `infra/runpod/setup.sh`, which installs dependencies, initializes PostgreSQL, starts supervisord (redis, postgres, ollama, cloudflared, api, pipeline, monitoring), and restores data from the network volume backup.
+**Backend**: The RunPod pod boots from `infra/runpod/setup.sh`, which installs dependencies, initializes PostgreSQL, starts supervisord (redis, postgres, ollama, cloudflared, api, pipeline, monitoring, pg-backup, pg-ttl), and restores data from the network volume backup. The script auto-runs on pod restart via RunPod dockerArgs.
 
 **Frontend**: Auto-deploys via GitHub Actions on push to `production` branch. Manual deploy with `npx wrangler pages deploy dist --branch production` from `frontend/`.
