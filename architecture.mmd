@@ -3,9 +3,9 @@ flowchart TB
 
   %% ============ MAIN PIPELINE SPINE ============
 
-  FEEDS(["13 OpenMHz Systems<br/>LA, Chicago, Charlotte, Philly,<br/>Seattle, SF, Dallas, Portland, +5"])
+  FEEDS(["24 OpenMHz Systems<br/>LA, Chicago, Charlotte, Philly,<br/>Seattle, SF, Dallas, Portland, +16"])
 
-  CAPTURE["OpenMHz Poller<br/>Playwright per-system<br/>per-call WAV download"]
+  CAPTURE["OpenMHz Poller<br/>curl_cffi (chrome124)<br/>per-call MP3 download"]
 
   Q1[["Redis queue<br/>capture:chunks"]]
 
@@ -13,36 +13,36 @@ flowchart TB
 
   Q2[["Redis queue<br/>transcribe:done"]]
 
-  EXTRACT["NLP Entity Extraction<br/>+ Google Places Geocoding<br/>per-city region bias<br/>event dedup 10min/500m"]
+  EXTRACT["Regex Entity Extraction<br/>+ Nominatim Geocoding<br/>per-city region bias<br/>event dedup 10min/500m"]
+
+  OLLAMA["Ollama · Qwen 2.5 7B<br/>one-sentence event summaries"]
 
   %% ============ STORAGE ============
 
-  subgraph DB["ClickHouse 24.8"]
+  subgraph DB["PostgreSQL 16"]
     direction LR
     T_TX[("scanner_transcripts")]
-    T_EV[("scanner_events<br/>ReplacingMergeTree")]
-    T_MET[("pipeline_metrics")]
+    T_EV[("scanner_events")]
   end
+
+  LOCAL[("Local Storage<br/>/workspace/blotter-audio<br/>MP3 · 7-day TTL")]
 
   %% ============ SERVING PATH ============
 
-  TUNNEL["cloudflared tunnel<br/>ch.blotter.fm"]
-  ACCESS["Cloudflare Access · mTLS"]
-  FNQUERY["/api/query · Pages Function<br/>SQL proxy, SELECT whitelist"]
+  API["Starlette API<br/>api.blotter.fm:8080<br/>+ audio serving"]
+  TUNNEL["cloudflared tunnel<br/>api.blotter.fm"]
   SPA["React + MapLibre SPA<br/>blotter.fm · Cloudflare Pages"]
   USER(["User · browser / mobile"])
 
-  %% ============ EXTERNAL SERVICES ============
+  %% ============ NOMINATIM ============
 
-  GCS[("GCS · blotter-audio<br/>signed URLs 24h")]
-  GNLP["Google NLP API<br/>entity extraction"]
-  GPLACES["Google Places API<br/>findplacefromtext"]
+  NOM["Nominatim<br/>OpenStreetMap geocoding"]
 
   %% ============ MONITORING ============
 
-  CRON["Monitoring Cron<br/>heartbeat, procs, disk,<br/>queues, services,<br/>throughput, daily digest"]
+  MON["Monitoring Loop<br/>heartbeat, procs, disk,<br/>queues, services,<br/>daily digest"]
   NTFY["ntfy.sh<br/>push alerts"]
-  CANARY["cronjob.org 15m<br/>/api/health endpoint"]
+  CANARY["cronjob.org 15m<br/>/api/canary endpoint"]
 
   %% ============ DEPLOYMENT ============
 
@@ -55,32 +55,32 @@ flowchart TB
   Q1 --> WHISPER
   WHISPER --> Q2
   Q2 --> EXTRACT
+  EXTRACT --> OLLAMA
   WHISPER -->|"INSERT"| T_TX
   EXTRACT -->|"INSERT"| T_EV
+  OLLAMA -->|"summary"| T_EV
 
   %% ============ SERVING FLOW ============
 
-  DB --- TUNNEL
-  TUNNEL --- ACCESS
-  ACCESS --- FNQUERY
-  FNQUERY --- SPA
+  DB --- API
+  API --- TUNNEL
+  TUNNEL --- SPA
   SPA --- USER
 
   %% ============ SIDE: Audio storage ============
 
-  CAPTURE -->|"upload wav"| GCS
-  SPA -.->|"audio playback"| GCS
+  CAPTURE -->|"store mp3"| LOCAL
+  API -->|"serve audio"| LOCAL
+  SPA -.->|"audio playback"| API
 
-  %% ============ SIDE: Google APIs ============
+  %% ============ SIDE: Geocoding ============
 
-  EXTRACT --> GNLP
-  EXTRACT --> GPLACES
+  EXTRACT --> NOM
 
   %% ============ SIDE: Monitoring ============
 
-  CRON -->|"metrics"| T_MET
-  CRON -->|"alerts"| NTFY
-  CANARY -->|"health check"| FNQUERY
+  MON -->|"alerts"| NTFY
+  CANARY -->|"health check"| API
   CANARY -.->|"alert if down"| NTFY
 
   %% ============ SIDE: Deploy ============
@@ -92,16 +92,16 @@ flowchart TB
   classDef queue fill:#92400e,stroke:#f59e0b,color:#fff
   classDef db fill:#1e3a5f,stroke:#60a5fa,color:#fff
   classDef stage fill:#14532d,stroke:#4ade80,color:#fff
-  classDef google fill:#312e81,stroke:#818cf8,color:#fff
+  classDef ext fill:#312e81,stroke:#818cf8,color:#fff
   classDef alert fill:#7f1d1d,stroke:#f87171,color:#fff
   classDef serve fill:#1a3344,stroke:#f97316,color:#fff
   classDef user fill:#475569,stroke:#94a3b8,color:#fff
 
   class Q1,Q2 queue
-  class T_TX,T_EV,T_MET,GCS db
-  class CAPTURE,WHISPER,EXTRACT stage
-  class GNLP,GPLACES google
-  class NTFY,CANARY,CRON alert
-  class TUNNEL,ACCESS,FNQUERY,SPA serve
+  class T_TX,T_EV,LOCAL db
+  class CAPTURE,WHISPER,EXTRACT,OLLAMA stage
+  class NOM ext
+  class NTFY,CANARY,MON alert
+  class TUNNEL,API,SPA serve
   class USER,FEEDS user
   class DEPLOY serve
