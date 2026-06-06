@@ -343,7 +343,7 @@ class OpenMhzCaptureManager:
 
         COOKIE_REFRESH_SECONDS = 1800
 
-        session = Session(impersonate="chrome124")
+        session = Session(impersonate="safari")
         for name, value in cookies.items():
             session.cookies.set(name, value, domain=".openmhz.com")
 
