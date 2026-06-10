@@ -99,8 +99,16 @@ def _process_call(
 
         try:
             client = http_client or httpx
-            resp = client.get(audio_url, timeout=10, follow_redirects=True)
-            resp.raise_for_status()
+            for attempt in range(3):
+                resp = client.get(audio_url, timeout=10, follow_redirects=True)
+                if resp.status_code == 429:
+                    time.sleep(2 ** attempt)
+                    continue
+                resp.raise_for_status()
+                break
+            else:
+                log.debug("audio rate limited", system=system, tg=tg_num)
+                return
             mp3_path.write_bytes(resp.content)
             resp.close()
         except Exception:
@@ -251,9 +259,9 @@ class OpenMhzCaptureManager:
         http_client = httpx.Client(
             timeout=10,
             follow_redirects=True,
-            limits=httpx.Limits(max_connections=50, max_keepalive_connections=10, keepalive_expiry=30),
+            limits=httpx.Limits(max_connections=5, max_keepalive_connections=3, keepalive_expiry=30),
         )
-        executor = ThreadPoolExecutor(max_workers=32)
+        executor = ThreadPoolExecutor(max_workers=4)
 
         try:
             while not self._stop.is_set():
