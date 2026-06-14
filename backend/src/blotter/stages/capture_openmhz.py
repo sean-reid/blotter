@@ -6,7 +6,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import Event
+from threading import Event, Lock
 
 import httpx
 import redis
@@ -20,6 +20,9 @@ from blotter.queue import enqueue_chunk
 log = get_logger(__name__)
 
 TALKGROUP_NAMES: dict[str, dict[int, str]] = {}
+
+_download_lock = Lock()
+_DOWNLOAD_SPACING = 0.5
 
 
 def _talkgroup_label(system: str, tg_num: int) -> str:
@@ -99,10 +102,12 @@ def _process_call(
 
         try:
             client = http_client or httpx
-            for attempt in range(3):
-                resp = client.get(audio_url, timeout=10, follow_redirects=True)
+            for attempt in range(5):
+                with _download_lock:
+                    time.sleep(_DOWNLOAD_SPACING)
+                    resp = client.get(audio_url, timeout=10, follow_redirects=True)
                 if resp.status_code == 429:
-                    time.sleep(2 ** attempt)
+                    time.sleep(3 * (2 ** attempt))
                     continue
                 resp.raise_for_status()
                 break
@@ -261,7 +266,7 @@ class OpenMhzCaptureManager:
             follow_redirects=True,
             limits=httpx.Limits(max_connections=5, max_keepalive_connections=3, keepalive_expiry=30),
         )
-        executor = ThreadPoolExecutor(max_workers=4)
+        executor = ThreadPoolExecutor(max_workers=2)
 
         try:
             while not self._stop.is_set():
