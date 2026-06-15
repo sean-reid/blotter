@@ -21,7 +21,7 @@ log = get_logger(__name__)
 
 TALKGROUP_NAMES: dict[str, dict[int, str]] = {}
 
-_DOWNLOAD_SPACING = 0.15
+_DOWNLOAD_SPACING = 0.05
 
 
 def _talkgroup_label(system: str, tg_num: int) -> str:
@@ -264,7 +264,7 @@ class OpenMhzCaptureManager:
             follow_redirects=True,
             limits=httpx.Limits(max_connections=5, max_keepalive_connections=3, keepalive_expiry=30),
         )
-        executor = ThreadPoolExecutor(max_workers=2)
+        executor = ThreadPoolExecutor(max_workers=3)
 
         try:
             while not self._stop.is_set():
