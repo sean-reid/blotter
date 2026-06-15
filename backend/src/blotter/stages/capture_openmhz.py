@@ -6,7 +6,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import Event, Lock
+from threading import Event
 
 import httpx
 import redis
@@ -21,8 +21,7 @@ log = get_logger(__name__)
 
 TALKGROUP_NAMES: dict[str, dict[int, str]] = {}
 
-_download_lock = Lock()
-_DOWNLOAD_SPACING = 0.5
+_DOWNLOAD_SPACING = 0.15
 
 
 def _talkgroup_label(system: str, tg_num: int) -> str:
@@ -103,9 +102,8 @@ def _process_call(
         try:
             client = http_client or httpx
             for attempt in range(5):
-                with _download_lock:
-                    time.sleep(_DOWNLOAD_SPACING)
-                    resp = client.get(audio_url, timeout=10, follow_redirects=True)
+                time.sleep(_DOWNLOAD_SPACING)
+                resp = client.get(audio_url, timeout=10, follow_redirects=True)
                 if resp.status_code == 429:
                     time.sleep(3 * (2 ** attempt))
                     continue
