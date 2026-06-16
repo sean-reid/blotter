@@ -91,6 +91,10 @@ def _process_call(
     else:
         ts = datetime.now(timezone.utc)
 
+    age = (datetime.now(timezone.utc) - ts).total_seconds()
+    if age > 300:
+        return
+
     feed_id = f"{system}-{tg_num}"
     feed_name = _feed_name(system, tg_num)
 
@@ -411,18 +415,6 @@ class OpenMhzCaptureManager:
                         calls = data.get("calls", [])
                         seen_key = f"blotter:openmhz:seen:{system}"
                         new_calls = 0
-
-                        if len(calls) >= 50:
-                            now_ms = int(time.time() * 1000)
-                            skipped = self._last_times[system]
-                            self._last_times[system] = now_ms
-                            log.warning(
-                                "backlog detected, skipping to now",
-                                system=system,
-                                batch_size=len(calls),
-                                skipped_from=skipped,
-                            )
-                            continue
 
                         for call in calls:
                             call_id = call.get("_id", "")
