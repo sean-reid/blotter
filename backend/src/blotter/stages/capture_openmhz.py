@@ -21,8 +21,6 @@ log = get_logger(__name__)
 
 TALKGROUP_NAMES: dict[str, dict[int, str]] = {}
 
-_DOWNLOAD_SPACING = 0.02
-
 
 def _talkgroup_label(system: str, tg_num: int) -> str:
     name = TALKGROUP_NAMES.get(system, {}).get(tg_num)
@@ -102,7 +100,6 @@ def _process_call(
         try:
             client = http_client or httpx
             for attempt in range(5):
-                time.sleep(_DOWNLOAD_SPACING)
                 resp = client.get(audio_url, timeout=10, follow_redirects=True)
                 if resp.status_code == 429:
                     time.sleep(3 * (2 ** attempt))
@@ -262,9 +259,9 @@ class OpenMhzCaptureManager:
         http_client = httpx.Client(
             timeout=10,
             follow_redirects=True,
-            limits=httpx.Limits(max_connections=8, max_keepalive_connections=6, keepalive_expiry=30),
+            limits=httpx.Limits(max_connections=12, max_keepalive_connections=10, keepalive_expiry=30),
         )
-        executor = ThreadPoolExecutor(max_workers=6)
+        executor = ThreadPoolExecutor(max_workers=10)
 
         try:
             while not self._stop.is_set():
