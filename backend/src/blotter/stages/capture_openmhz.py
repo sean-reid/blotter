@@ -321,6 +321,10 @@ class OpenMhzCaptureManager:
         log.info("openmhz capture stopped")
 
     def _submit_call(self, executor, call, system, http_client):
+        self._pending_futures = [f for f in self._pending_futures if not f.done()]
+        if len(self._pending_futures) > 60:
+            return
+
         call_data = {
             "url": call.get("url", ""),
             "talkgroupNum": call.get("talkgroupNum", 0),
@@ -340,8 +344,6 @@ class OpenMhzCaptureManager:
 
         fut = executor.submit(_wrapped)
         self._pending_futures.append(fut)
-        if len(self._pending_futures) > 100:
-            self._pending_futures = [f for f in self._pending_futures if not f.done()]
 
     def _run_poll_loop(
         self,
