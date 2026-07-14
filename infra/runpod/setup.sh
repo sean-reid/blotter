@@ -67,6 +67,7 @@ cd "$REPO_DIR/backend"
 uv sync 2>/dev/null
 uv pip install playwright 2>/dev/null
 uv run playwright install chromium --with-deps 2>/dev/null
+rm -rf /root/.cache/uv /root/.cache/ms-playwright 2>/dev/null
 echo "[OK] Python packages + Playwright"
 
 # Create local audio storage directory
