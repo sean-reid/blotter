@@ -256,9 +256,15 @@ class OpenMhzCaptureManager:
 
         self._last_times = {s: int(time.time() * 1000) for s in systems}
 
+        proxy_str = self.config.proxies.strip()
+        proxies = [p.strip() for p in proxy_str.split(",") if p.strip()] if proxy_str else []
+        if proxies:
+            log.info("proxy rotation enabled", count=len(proxies))
+        proxy_idx = 0
+        consecutive_blocks = 0
+
         log.info("openmhz capture starting", systems=len(systems))
         consecutive_failures = 0
-        tls_rejections = 0
         challenge_retries = 0
         http_client = httpx.Client(
             timeout=10,
@@ -269,35 +275,52 @@ class OpenMhzCaptureManager:
 
         try:
             while not self._stop.is_set():
+                proxy = proxies[proxy_idx] if proxies else None
                 try:
                     consecutive_failures = 0
-                    polls_done = self._run_poll_loop(systems, executor, http_client, {})
+                    polls_done = self._run_poll_loop(
+                        systems, executor, http_client, {}, proxy=proxy,
+                    )
 
                     if polls_done is True:
-                        tls_rejections += 1
-                        if tls_rejections >= 3:
-                            log.error(
-                                "curl_cffi TLS fingerprint rejected 3 times, stopping "
-                                "to avoid IP ban — manual intervention required",
+                        consecutive_blocks += 1
+                        if proxies:
+                            proxy_idx = (proxy_idx + 1) % len(proxies)
+                            log.warning(
+                                "ip blocked, rotating proxy",
+                                next_proxy=proxy_idx,
+                                total_proxies=len(proxies),
+                                consecutive_blocks=consecutive_blocks,
                             )
-                            self._stop.set()
-                            break
-                        delay = 60 * tls_rejections
-                        log.warning(
-                            "tls rejection, backing off",
-                            rejections=tls_rejections,
-                            retry_in=delay,
-                        )
-                        self._stop.wait(delay)
+                            if consecutive_blocks >= len(proxies) * 2:
+                                log.error("all proxies exhausted, stopping")
+                                self._stop.set()
+                                break
+                            self._stop.wait(30)
+                        else:
+                            if consecutive_blocks >= 3:
+                                log.error(
+                                    "ip hard-blocked 3 times with no proxies configured, "
+                                    "stopping — set OPENMHZ_PROXIES to enable rotation",
+                                )
+                                self._stop.set()
+                                break
+                            delay = 60 * consecutive_blocks
+                            log.warning(
+                                "tls rejection, backing off",
+                                rejections=consecutive_blocks,
+                                retry_in=delay,
+                            )
+                            self._stop.wait(delay)
                     elif polls_done == 0:
-                        tls_rejections = 0
+                        consecutive_blocks += 1
                         challenge_retries += 1
                         delay = min(30 * challenge_retries, 300)
                         log.warning("challenge on first poll, backing off",
                                     retries=challenge_retries, retry_in=delay)
                         self._stop.wait(delay)
                     else:
-                        tls_rejections = 0
+                        consecutive_blocks = 0
                         challenge_retries = 0
 
                 except Exception:
@@ -351,19 +374,21 @@ class OpenMhzCaptureManager:
         executor: ThreadPoolExecutor,
         http_client: httpx.Client,
         cookies: dict[str, str],
+        proxy: str | None = None,
     ) -> bool | int:
         """Poll API using curl_cffi. Returns True if hard-blocked, 0 if challenge on first poll, or polls_since_cookies (>0) on normal cookie refresh."""
         from curl_cffi.requests import Session
 
         COOKIE_REFRESH_SECONDS = 1800
 
-        session = Session(impersonate="safari")
+        session = Session(impersonate="safari", proxy=proxy)
         for name, value in cookies.items():
             session.cookies.set(name, value, domain=".openmhz.com")
 
         cookie_start = time.monotonic()
         polls_since_cookies = 0
-        log.info("polling started", systems=systems, cookie_count=len(cookies))
+        log.info("polling started", systems=systems, cookie_count=len(cookies),
+                 proxy=bool(proxy))
 
         try:
             while not self._stop.is_set():
