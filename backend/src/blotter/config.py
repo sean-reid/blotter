@@ -86,6 +86,7 @@ class OpenMhzConfig(BaseSettings):
     api_url: str = "https://api.openmhz.com"
     systems: str = "lapdvalley,lapdwest"
     poll_interval: int = 3
+    proxies: str = ""
 
 
 class StreamConfig(BaseSettings):
