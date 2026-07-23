@@ -266,10 +266,13 @@ class OpenMhzCaptureManager:
         log.info("openmhz capture starting", systems=len(systems))
         consecutive_failures = 0
         challenge_retries = 0
+        first_proxy = proxies[0] if proxies else None
         http_client = httpx.Client(
             timeout=10,
             follow_redirects=True,
             limits=httpx.Limits(max_connections=12, max_keepalive_connections=10, keepalive_expiry=30),
+            proxy=first_proxy,
+            headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"},
         )
         executor = ThreadPoolExecutor(max_workers=10)
 
