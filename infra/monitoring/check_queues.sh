@@ -9,7 +9,7 @@ CAPTURE_DEPTH=$(redis-cli -a "$REDIS_PASS" --no-auth-warning LLEN blotter:captur
 LAST_DEPTH=$(cat "$STATE_FILE" 2>/dev/null || echo 0)
 echo "$CAPTURE_DEPTH" > "$STATE_FILE"
 
-if [ "${CAPTURE_DEPTH:-0}" -gt 30 ] && [ "$CAPTURE_DEPTH" -gt "$LAST_DEPTH" ] && [ -n "$NTFY_TOPIC" ]; then
+if [ "${CAPTURE_DEPTH:-0}" -gt 200 ] && [ "$CAPTURE_DEPTH" -gt "$LAST_DEPTH" ] && [ -n "$NTFY_TOPIC" ]; then
   curl -s -d "Transcription backlog: ${CAPTURE_DEPTH} chunks queued (was ${LAST_DEPTH})" \
     -H "Title: Transcription backlog" -H "Priority: high" -H "Tags: hourglass" \
     "ntfy.sh/$NTFY_TOPIC" > /dev/null
