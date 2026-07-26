@@ -174,7 +174,7 @@ def run_transcriber(
                     enqueue_transcript(r, tt)
 
                     depth = queue_depth(r, CAPTURE_QUEUE)
-                    if depth > 50:
+                    if depth > 200:
                         log.warning("transcription backlog", depth=depth)
 
                 except Exception:
