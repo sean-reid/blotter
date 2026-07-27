@@ -296,10 +296,6 @@ def run_processor(
                     if not entities:
                         entities = extract_clauses(context_text)
 
-                    summary = ""
-                    if summarizer and len(context_text) > 100:
-                        summary = summarizer.summarize(context_text) or ""
-
                     events = []
                     batch_coords: list[tuple[float, float]] = []
                     for e in entities:
@@ -334,7 +330,6 @@ def run_processor(
                             context=ctx,
                             tags=tags,
                             window_id=task.window_id,
-                            summary=summary,
                         ))
 
                     insert_events(conn, events)
@@ -364,11 +359,57 @@ def run_processor(
 
         log.info("processor thread stopped", thread_id=thread_id)
 
+    def _summarize_backfill() -> None:
+        if not summarizer:
+            return
+        conn = _connect_postgres(pg_config, stop)
+        log.info("summary backfill thread started")
+        try:
+            while not stop.is_set():
+                depth = queue_depth(r, CAPTURE_QUEUE)
+                if depth > 50:
+                    stop.wait(30)
+                    continue
+
+                rows = conn.execute(
+                    "SELECT id, context FROM scanner_events "
+                    "WHERE summary = '' AND created_at > now() - interval '24 hours' "
+                    "ORDER BY created_at DESC LIMIT 20"
+                ).fetchall()
+
+                if not rows:
+                    stop.wait(60)
+                    continue
+
+                for row in rows:
+                    if stop.is_set():
+                        break
+                    if queue_depth(r, CAPTURE_QUEUE) > 50:
+                        break
+                    summary = summarizer.summarize(row[1]) or ""
+                    if summary:
+                        conn.execute(
+                            "UPDATE scanner_events SET summary = %s WHERE id = %s",
+                            (summary, row[0]),
+                        )
+                log.debug("backfilled summaries", count=len(rows))
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        log.info("summary backfill thread stopped")
+
     log.info("processing worker started", num_threads=num_threads)
 
     threads: list[Thread] = []
     for i in range(num_threads):
         t = Thread(target=_processor_loop, args=(i,), name=f"processor-{i}", daemon=True)
+        t.start()
+        threads.append(t)
+
+    if summarizer:
+        t = Thread(target=_summarize_backfill, name="summary-backfill", daemon=True)
         t.start()
         threads.append(t)
 
