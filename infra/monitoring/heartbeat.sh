@@ -6,16 +6,18 @@ mkdir -p "$STATE_DIR"
 [ -f /workspace/blotter/.env.secrets ] && set -a && source /workspace/blotter/.env.secrets && set +a
 
 export PGPASSWORD="${POSTGRES_PASSWORD:-}"
-PG="psql -U blotter -d blotter -tAc"
+PG="psql -h localhost -U blotter -d blotter -tAc"
 
 TRANSCRIPT_COUNT=$($PG "SELECT count(*) FROM scanner_transcripts WHERE created_at > now() - interval '15 minutes'" 2>/dev/null || echo -1)
 EVENT_COUNT=$($PG "SELECT count(*) FROM scanner_events WHERE created_at > now() - interval '15 minutes'" 2>/dev/null || echo -1)
 
-if [ "${TRANSCRIPT_COUNT}" -eq 0 ]; then
+if [ "${TRANSCRIPT_COUNT}" -le 0 ]; then
   PREV=$(cat "$STATE_DIR/transcript_zero" 2>/dev/null || echo 0)
   echo $((PREV + 1)) > "$STATE_DIR/transcript_zero"
   if [ "$PREV" -ge 1 ] && [ -n "$NTFY_TOPIC" ]; then
-    curl -s -d "0 transcripts in last 15 min (2 consecutive checks)" \
+    MSG="0 transcripts in last 15 min (2 consecutive checks)"
+    [ "${TRANSCRIPT_COUNT}" -lt 0 ] && MSG="heartbeat cannot query postgres (2 consecutive checks)"
+    curl -s -d "$MSG" \
       -H "Title: Pipeline down" -H "Priority: urgent" -H "Tags: rotating_light" \
       "ntfy.sh/$NTFY_TOPIC" > /dev/null
   fi
