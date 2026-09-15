@@ -42,9 +42,12 @@ if [ $(wc -l < "$LOG") -gt 2000 ]; then
   tail -1000 "$LOG" > "${LOG}.tmp" && mv "${LOG}.tmp" "$LOG"
 fi
 
-# Alert if working set > 85%
-if [ "$PCT" -gt 85 ] && [ -n "$NTFY_TOPIC" ]; then
-  curl -s -d "Working set at ${PCT}% (${WS_GB}/${LIMIT_GB}GiB). RSS=${RSS_GB}GiB Cache=${CACHE_GB}GiB. Top: ${TOP_PROCS}" \
+# Alert on RSS (non-reclaimable memory) rather than working set.
+# inactive_file is pegged at 0 in this cgroup, making working set == total
+# usage and triggering on harmless page cache.
+RSS_PCT=$(awk "BEGIN {printf \"%.0f\", ${RSS:-0}*100/$LIMIT}")
+if [ "$RSS_PCT" -gt 85 ] && [ -n "$NTFY_TOPIC" ]; then
+  curl -s -d "RSS at ${RSS_PCT}% (${RSS_GB}/${LIMIT_GB}GiB). Cache=${CACHE_GB}GiB WS=${WS_GB}GiB. Top: ${TOP_PROCS}" \
     -H "Title: High memory pressure" -H "Priority: high" -H "Tags: warning" \
     "ntfy.sh/$NTFY_TOPIC" > /dev/null
 fi
