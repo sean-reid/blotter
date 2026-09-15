@@ -1,5 +1,6 @@
 import collections
 import gc
+import os
 import signal
 import time
 from threading import Event
@@ -28,6 +29,16 @@ from blotter.stages.geocode import Geocoder
 from blotter.stages.stream_transcribe import StreamTranscriber
 
 log = get_logger(__name__)
+
+OS_THREAD_WARN = 64
+
+
+def _os_thread_count() -> int:
+    # Counts native threads too; threading.enumerate() only sees Python ones.
+    try:
+        return len(os.listdir("/proc/self/task"))
+    except OSError:
+        return -1
 
 
 def _connect_postgres(pg_config: PostgresConfig, stop: Event | None = None, delay: int = 5):
@@ -110,6 +121,9 @@ def run_transcriber(
                 if processed % 100 == 0:
                     gc.collect()
                     _malloc_trim(0)
+                    os_threads = _os_thread_count()
+                    if os_threads > OS_THREAD_WARN:
+                        log.warning("os_thread_audit", count=os_threads, thread_id=thread_id, processed=processed)
 
                 try:
                     if transcript_exists(conn, task.feed_id, str(task.chunk_ts)):
@@ -278,7 +292,7 @@ def run_processor(
                         names: dict[str, int] = {}
                         for t in threading.enumerate():
                             names[t.name] = names.get(t.name, 0) + 1
-                        log.warning("thread_audit", count=tc, names=names)
+                        log.warning("thread_audit", count=tc, names=names, os_threads=_os_thread_count())
 
                 try:
                     if task.window_id:
